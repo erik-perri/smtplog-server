@@ -80,6 +80,8 @@ func removeConnection(connection net.Conn) {
 }
 
 func handleConnection(connection net.Conn, ctx context.Context) {
+	send220(connection, ctx)
+
 timeout:
 	for listening {
 		select {
@@ -107,5 +109,20 @@ timeout:
 	// If we're not listening, the connection would have been closed in StopListening
 	if listening {
 		removeConnection(connection)
+	}
+}
+
+func send220(conn net.Conn, ctx context.Context) {
+	_, err := conn.Write([]byte(
+		fmt.Sprintf(
+			"220 %s ESMTP %s\n",
+			ctx.Value(smtpContextKey("host")),
+			ctx.Value(smtpContextKey("serverName")),
+		),
+	))
+
+	if err != nil {
+		log.Printf("Failed to send 220 to %s", conn.RemoteAddr())
+		return
 	}
 }
