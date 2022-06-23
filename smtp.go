@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -12,8 +13,10 @@ import (
 var listening = false
 var smtpConnections []net.Conn
 
-func ListenForConnections(host string, port string) bool {
-	listenAddress := fmt.Sprintf("%s:%s", host, port)
+type smtpContextKey string
+
+func ListenForConnections(ctx context.Context) bool {
+	listenAddress := fmt.Sprintf("%s:%s", ctx.Value(smtpContextKey("host")), ctx.Value(smtpContextKey("port")))
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		log.Printf("Failed to listen on %s, %s", listenAddress, err)
@@ -41,7 +44,8 @@ func ListenForConnections(host string, port string) bool {
 
 		log.Printf("Accepted connection from %s", connection.RemoteAddr())
 		smtpConnections = append(smtpConnections, connection)
-		go handleConnection(connection)
+
+		go handleConnection(connection, ctx)
 	}
 
 	return true
@@ -72,7 +76,7 @@ func removeConnection(connection net.Conn) {
 	smtpConnections = filteredConnections
 }
 
-func handleConnection(connection net.Conn) {
+func handleConnection(connection net.Conn, ctx context.Context) {
 	for listening {
 		log.Printf("Reading %s", connection.RemoteAddr())
 		netData, err := bufio.NewReader(connection).ReadString('\n')

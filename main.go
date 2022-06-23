@@ -1,20 +1,21 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
-const (
-	SmtpHost = "localhost"
-	SmtpPort = "2525"
-)
-
 func main() {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, smtpContextKey("host"), "localhost")
+	ctx = context.WithValue(ctx, smtpContextKey("port"), "2525")
+	ctx = context.WithValue(ctx, smtpContextKey("serverName"), "smtp-log")
+
 	setupSignalHandler()
-	ListenForConnections(SmtpHost, SmtpPort)
+	ListenForConnections(ctx)
 }
 
 func setupSignalHandler() {
