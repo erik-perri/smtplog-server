@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 var listening = false
@@ -45,7 +46,9 @@ func ListenForConnections(ctx context.Context) bool {
 		log.Printf("Accepted connection from %s", connection.RemoteAddr())
 		smtpConnections = append(smtpConnections, connection)
 
-		go handleConnection(connection, ctx)
+		connectionCtx, _ := context.WithTimeout(ctx, time.Second*20)
+
+		go handleConnection(connection, connectionCtx)
 	}
 
 	return true
@@ -77,22 +80,28 @@ func removeConnection(connection net.Conn) {
 }
 
 func handleConnection(connection net.Conn, ctx context.Context) {
+timeout:
 	for listening {
-		log.Printf("Reading %s", connection.RemoteAddr())
-		netData, err := bufio.NewReader(connection).ReadString('\n')
-		if err != nil {
-			if listening {
-				log.Printf("Failed to read from from %s, %s", connection.RemoteAddr(), err)
+		select {
+		case <-ctx.Done():
+			break timeout
+		default:
+			log.Printf("Reading %s %s", connection.RemoteAddr(), ctx)
+			netData, err := bufio.NewReader(connection).ReadString('\n')
+			if err != nil {
+				if listening {
+					log.Printf("Failed to read from from %s, %s", connection.RemoteAddr(), err)
+				}
+				break
 			}
-			break
-		}
 
-		netData = strings.Trim(netData, "\r\n")
-		if len(netData) == 0 {
-			break
-		}
+			netData = strings.Trim(netData, "\r\n")
+			if len(netData) == 0 {
+				break
+			}
 
-		log.Printf("Read %s (%d)", netData, len(netData))
+			log.Printf("Read %s (%d)", netData, len(netData))
+		}
 	}
 
 	// If we're not listening, the connection would have been closed in StopListening
