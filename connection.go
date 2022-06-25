@@ -31,11 +31,11 @@ func (n *ConnectionContext) Send220() {
 }
 
 func (n *ConnectionContext) WaitForCommands() {
-done:
+read:
 	for {
 		select {
 		case <-n.context.Done():
-			break done
+			break read
 		default:
 			err := n.connection.SetReadDeadline(time.Now().Add(
 				n.context.Value(smtpContextKey("readDeadline")).(time.Duration),
@@ -43,10 +43,10 @@ done:
 			if err != nil {
 				select {
 				case <-n.context.Done():
-					break done
+					break read
 				default:
 					log.Printf("Failed to set read deadline, %s", err)
-					break done
+					break read
 				}
 			}
 
@@ -54,23 +54,23 @@ done:
 			if err != nil {
 				select {
 				case <-n.context.Done():
-					break done
+					break read
 				default:
 					if opErr, castSuccess := err.(*net.OpError); castSuccess && opErr.Temporary() {
 						if !opErr.Timeout() {
 							log.Printf("Failed to read from connection, %s", err)
 							time.Sleep(time.Millisecond * 100)
 						}
-						continue done
+						continue read
 					} else {
-						break done
+						break read
 					}
 				}
 			}
 
 			netData = strings.Trim(netData, "\r\n")
 			if len(netData) == 0 {
-				break done
+				break read
 			}
 
 			log.Printf("Read %s (%d)", netData, len(netData))

@@ -70,24 +70,24 @@ func (n *SmtpServerContext) WaitForConnections() {
 		n.waitGroup.Done()
 	}()
 
-done:
+listen:
 	for {
 		select {
 		case <-n.quitChannel:
-			break done
+			break listen
 		case <-n.context.Done():
-			break done
+			break listen
 		default:
 			conn, err := n.listener.Accept()
 			if err != nil {
 				select {
 				case <-n.quitChannel:
-					break done
+					break listen
 				case <-n.context.Done():
-					break done
+					break listen
 				default:
 					log.Printf("Failed to accept connection, %s", err)
-					continue done
+					continue listen
 				}
 			}
 
