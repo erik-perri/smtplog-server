@@ -9,29 +9,34 @@ import (
 )
 
 func main() {
-	server, err := StartServer("localhost", 2525)
+	server, err := StartSmtpServer(
+		"localhost",
+		2525,
+		time.Second*10,
+		time.Second*5,
+		"localhost",
+		"smtp-log",
+	)
 	if err != nil {
-		log.Printf("Failed to start server %s", err)
-		os.Exit(1)
-		return
+		log.Fatalf("Failed to start server %s", err)
 	}
 
 	signals := make(chan os.Signal)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		receivedSignal := <-signals
-		log.Printf("Signal received %s", receivedSignal)
+		<-signals
 
 		server.Stop()
 
-		// `Stop` will cause WaitForConnections to close, ending the app. Just in case it doesn't we'll kill
-		// ourselves after 3 seconds.
-		time.Sleep(3 * time.Second)
-		log.Printf("Killing")
-		os.Exit(1)
+		gracefulShutdownTime := 5 * time.Second
+		log.Printf("Waiting %s seconds for graceful shutdown", gracefulShutdownTime)
+		time.Sleep(gracefulShutdownTime)
+
+		server.CloseConnections()
+		log.Fatalf("Failed to cleanup in time")
 	}()
 
 	server.WaitForConnections()
-	log.Printf("Finished")
+	server.WaitForCleanup()
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -12,17 +11,17 @@ import (
 )
 
 type ConnectionContext struct {
-	cancel     context.CancelFunc
-	connection net.Conn
-	context    context.Context
+	cancelTimeout context.CancelFunc
+	connection    net.Conn
+	context       context.Context
 }
 
 func (n *ConnectionContext) Send220() {
 	_, err := n.connection.Write([]byte(
 		fmt.Sprintf(
 			"220 %s ESMTP %s\n",
-			n.context.Value(smtpContextKey("host")),
-			n.context.Value(smtpContextKey("serverName")),
+			n.context.Value(smtpContextKey("bannerHost")),
+			n.context.Value(smtpContextKey("bannerName")),
 		),
 	))
 
@@ -38,23 +37,35 @@ done:
 		case <-n.context.Done():
 			break done
 		default:
-			err := n.connection.SetReadDeadline(time.Now().Add(time.Second * 5))
+			err := n.connection.SetReadDeadline(time.Now().Add(
+				n.context.Value(smtpContextKey("readDeadline")).(time.Duration),
+			))
 			if err != nil {
-				log.Printf("Failed to set read deadline, %s", err)
-				break
+				select {
+				case <-n.context.Done():
+					break done
+				default:
+					log.Printf("Failed to set read deadline, %s", err)
+					break done
+				}
 			}
 
 			netData, err := bufio.NewReader(n.connection).ReadString('\n')
 			if err != nil {
-				if err == io.EOF {
+				select {
+				case <-n.context.Done():
 					break done
+				default:
+					if opErr, castSuccess := err.(*net.OpError); castSuccess && opErr.Temporary() {
+						if !opErr.Timeout() {
+							log.Printf("Failed to read from connection, %s", err)
+							time.Sleep(time.Millisecond * 100)
+						}
+						continue done
+					} else {
+						break done
+					}
 				}
-				log.Printf(
-					"Failed to read from from %s, %s",
-					n.connection.RemoteAddr(),
-					err,
-				)
-				break
 			}
 
 			netData = strings.Trim(netData, "\r\n")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -13,43 +14,45 @@ type smtpContextKey string
 type SmtpServerContext struct {
 	connections []ConnectionContext
 	context     context.Context
-	cancel      context.CancelFunc
 	listener    net.Listener
+	quitChannel chan interface{}
+	waitGroup   sync.WaitGroup
 }
 
-func StartServer(
+func StartSmtpServer(
 	listenHost string,
 	listenPort int,
+	connectionTimeLimit time.Duration,
+	readDeadline time.Duration,
+	bannerHost string,
+	bannerName string,
 ) (server *SmtpServerContext, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", listenHost, listenPort)
 
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, smtpContextKey("address"), listenAddress)
-	ctx, cancel := context.WithCancel(ctx)
+	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), connectionTimeLimit)
+	ctx = context.WithValue(ctx, smtpContextKey("readDeadline"), readDeadline)
+	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), bannerHost)
+	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), bannerName)
 
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		log.Printf("Failed to listen on %s, %s", listenAddress, err)
-		cancel()
 		return nil, err
 	}
 
 	log.Printf("Started listening on %s", listenAddress)
 	server = &SmtpServerContext{
-		context:  ctx,
-		cancel:   cancel,
-		listener: listener,
+		context:     ctx,
+		listener:    listener,
+		quitChannel: make(chan interface{}),
 	}
 
 	return server, nil
 }
 
 func (n *SmtpServerContext) Stop() {
-	n.cancel()
-
-	for _, connection := range n.connections {
-		n.Close(connection)
-	}
+	close(n.quitChannel)
 
 	err := n.listener.Close()
 	if err != nil {
@@ -57,30 +60,52 @@ func (n *SmtpServerContext) Stop() {
 	}
 }
 
+func (n *SmtpServerContext) WaitForCleanup() {
+	n.waitGroup.Wait()
+}
+
 func (n *SmtpServerContext) WaitForConnections() {
+	n.waitGroup.Add(1)
+	defer func() {
+		n.waitGroup.Done()
+	}()
+
 done:
 	for {
 		select {
+		case <-n.quitChannel:
+			break done
 		case <-n.context.Done():
 			break done
 		default:
 			conn, err := n.listener.Accept()
 			if err != nil {
-				log.Printf("Failed to accept connection, %s", err)
-				break
+				select {
+				case <-n.quitChannel:
+					break done
+				case <-n.context.Done():
+					break done
+				default:
+					log.Printf("Failed to accept connection, %s", err)
+					continue done
+				}
 			}
 
 			log.Printf("Accepted connection from %s", conn.RemoteAddr())
 
-			ctx, cancel := context.WithTimeout(n.context, time.Second*10)
+			ctx, cancel := context.WithTimeout(
+				n.context,
+				n.context.Value(smtpContextKey("connectionTimeLimit")).(time.Duration),
+			)
 
 			connection := ConnectionContext{
-				cancel:     cancel,
-				connection: conn,
-				context:    ctx,
+				cancelTimeout: cancel,
+				connection:    conn,
+				context:       ctx,
 			}
 
 			n.connections = append(n.connections, connection)
+			n.waitGroup.Add(1)
 
 			go func() {
 				connection.Send220()
@@ -94,9 +119,7 @@ done:
 }
 
 func (n *SmtpServerContext) Close(connection ConnectionContext) {
-	n.connections = removeConnectionFromContextArray(n.connections, connection)
-
-	connection.cancel()
+	connection.cancelTimeout()
 
 	err := connection.connection.Close()
 	if err != nil {
@@ -105,6 +128,15 @@ func (n *SmtpServerContext) Close(connection ConnectionContext) {
 			connection.connection.RemoteAddr(),
 			err,
 		)
+	}
+
+	n.connections = removeConnectionFromContextArray(n.connections, connection)
+	n.waitGroup.Done()
+}
+
+func (n *SmtpServerContext) CloseConnections() {
+	for _, connection := range n.connections {
+		n.Close(connection)
 	}
 }
 
