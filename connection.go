@@ -1,33 +1,42 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
 	"net"
-	"strings"
+	"net/textproto"
 	"time"
 )
 
 type ConnectionContext struct {
 	cancelTimeout context.CancelFunc
-	connection    net.Conn
+	conn          net.Conn
+	text          *textproto.Conn
 	context       context.Context
 }
 
+func (n *ConnectionContext) SendResponse(code int, response string) {
+	err := n.conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
+	if err != nil {
+		log.Printf("Failed to set write deadline on %s, %s", n.conn.RemoteAddr(), err)
+	}
+
+	err = n.text.PrintfLine("%d %s", code, response)
+	if err != nil {
+		log.Printf("Failed to send %d to %s", code, n.conn.RemoteAddr())
+	}
+}
+
 func (n *ConnectionContext) Send220() {
-	_, err := n.connection.Write([]byte(
+	n.SendResponse(
+		220,
 		fmt.Sprintf(
-			"220 %s ESMTP %s\n",
+			"%s Service ready %s",
 			n.context.Value(smtpContextKey("bannerHost")),
 			n.context.Value(smtpContextKey("bannerName")),
 		),
-	))
-
-	if err != nil {
-		log.Printf("Failed to send 220 to %s", n.connection.RemoteAddr())
-	}
+	)
 }
 
 func (n *ConnectionContext) WaitForCommands() {
@@ -37,7 +46,7 @@ read:
 		case <-n.context.Done():
 			break read
 		default:
-			err := n.connection.SetReadDeadline(time.Now().Add(
+			err := n.conn.SetReadDeadline(time.Now().Add(
 				n.context.Value(smtpContextKey("readDeadline")).(time.Duration),
 			))
 			if err != nil {
@@ -50,7 +59,7 @@ read:
 				}
 			}
 
-			netData, err := bufio.NewReader(n.connection).ReadString('\n')
+			netData, err := n.text.ReadLine()
 			if err != nil {
 				select {
 				case <-n.context.Done():
@@ -68,7 +77,6 @@ read:
 				}
 			}
 
-			netData = strings.Trim(netData, "\r\n")
 			if len(netData) == 0 {
 				break read
 			}

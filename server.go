@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/textproto"
 	"sync"
 	"time"
 )
@@ -98,9 +99,12 @@ listen:
 				n.context.Value(smtpContextKey("connectionTimeLimit")).(time.Duration),
 			)
 
+			textConn := textproto.NewConn(conn)
+
 			connection := ConnectionContext{
 				cancelTimeout: cancel,
-				connection:    conn,
+				conn:          conn,
+				text:          textConn,
 				context:       ctx,
 			}
 
@@ -121,11 +125,11 @@ listen:
 func (n *SmtpServerContext) Close(connection ConnectionContext) {
 	connection.cancelTimeout()
 
-	err := connection.connection.Close()
+	err := connection.text.Close()
 	if err != nil {
 		log.Printf(
 			"Failed to close connection %s, %s",
-			connection.connection.RemoteAddr(),
+			connection.conn.RemoteAddr(),
 			err,
 		)
 	}
@@ -143,7 +147,7 @@ func (n *SmtpServerContext) CloseConnections() {
 func removeConnectionFromContextArray(connections []ConnectionContext, remove ConnectionContext) []ConnectionContext {
 	var filtered []ConnectionContext
 	for _, connection := range connections {
-		if connection.connection != remove.connection {
+		if connection.conn != remove.conn {
 			filtered = append(filtered, connection)
 		}
 	}
