@@ -140,6 +140,7 @@ func (n *SmtpServerContext) Close(connection ConnectionContext) {
 
 func (n *SmtpServerContext) CloseConnections() {
 	for _, connection := range n.connections {
+		connection.Send421()
 		n.Close(connection)
 	}
 }

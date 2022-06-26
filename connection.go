@@ -39,11 +39,20 @@ func (n *ConnectionContext) Send220() {
 	)
 }
 
+func (n *ConnectionContext) Send221() {
+	n.SendResponse(221, "Service closing transmission channel")
+}
+
+func (n *ConnectionContext) Send421() {
+	n.SendResponse(421, "Service not available, closing transmission channel")
+}
+
 func (n *ConnectionContext) WaitForCommands() {
 read:
 	for {
 		select {
 		case <-n.context.Done():
+			n.Send221()
 			break read
 		default:
 			err := n.conn.SetReadDeadline(time.Now().Add(
@@ -63,6 +72,7 @@ read:
 			if err != nil {
 				select {
 				case <-n.context.Done():
+					n.Send221()
 					break read
 				default:
 					if opErr, castSuccess := err.(*net.OpError); castSuccess && opErr.Temporary() {
