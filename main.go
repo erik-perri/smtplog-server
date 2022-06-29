@@ -9,10 +9,11 @@ import (
 )
 
 func main() {
+	connectionTimeout := time.Second * 10
 	server, err := StartSmtpServer(
 		"localhost",
 		2525,
-		time.Second*10,
+		connectionTimeout,
 		time.Second*5,
 		"localhost",
 		"smtp-log",
@@ -29,9 +30,9 @@ func main() {
 
 		server.Stop()
 
-		gracefulShutdownTime := 5 * time.Second
-		log.Printf("Waiting %s seconds for graceful shutdown", gracefulShutdownTime)
-		time.Sleep(gracefulShutdownTime)
+		shutdownTimeout := connectionTimeout + time.Second
+		log.Printf("Waiting %s seconds for graceful shutdown", shutdownTimeout)
+		time.Sleep(shutdownTimeout)
 
 		server.CloseConnections()
 		log.Fatalf("Failed to cleanup in time")
