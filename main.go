@@ -12,7 +12,7 @@ func main() {
 	connectionTimeout := time.Second * 10
 	readTimeout := time.Second * 5
 	server, err := StartSmtpServer(
-		"localhost",
+		"0.0.0.0",
 		2525,
 		connectionTimeout,
 		readTimeout,
