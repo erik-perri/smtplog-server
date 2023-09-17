@@ -1,3 +1,3 @@
-module github.com/erik-perri/smtp-log
+module github.com/erik-perri/smtplog-server
 
 go 1.18
