@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -208,11 +209,13 @@ read:
 				case <-n.context.Done():
 					break read
 				default:
-					if opErr, castSuccess := err.(*net.OpError); castSuccess && opErr.Temporary() {
+					var opErr *net.OpError
+					if errors.As(err, &opErr) && opErr.Temporary() {
 						if !opErr.Timeout() {
 							log.Printf("Failed to read from connection, %s", err)
 							time.Sleep(time.Millisecond * 100)
 						}
+
 						continue read
 					}
 
