@@ -9,12 +9,12 @@ import (
 )
 
 func main() {
-	connectionTimeout := time.Second * 10
+	connectionTimeLimit := time.Second * 10
 	readTimeout := time.Second * 5
 	server, err := StartSmtpServer(
 		"0.0.0.0",
 		2525,
-		connectionTimeout,
+		connectionTimeLimit,
 		readTimeout,
 		"localhost",
 		"smtp-log",
@@ -31,7 +31,7 @@ func main() {
 
 		server.Stop()
 
-		shutdownTimeout := connectionTimeout + time.Second
+		shutdownTimeout := connectionTimeLimit + time.Second
 		log.Printf("Waiting %s seconds for graceful shutdown", shutdownTimeout)
 		time.Sleep(shutdownTimeout)
 
