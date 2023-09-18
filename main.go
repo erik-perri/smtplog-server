@@ -10,22 +10,34 @@ import (
 	"time"
 )
 
+type Config struct {
+	bannerHost          string
+	bannerName          string
+	certFile            string
+	connectionTimeLimit time.Duration
+	keyFile             string
+	listenHost          string
+	listenHostTLS       string
+	listenPort          int
+	listenPortTLS       int
+	readTimeout         time.Duration
+}
+
 func main() {
-	tlsConfig, err := loadTlsConfig("server.crt", "server.key")
-	if err != nil {
-		log.Fatalf("Failed to load key pair %s", err)
+	config := Config{
+		bannerHost:          "localhost",
+		bannerName:          "smtp-log",
+		certFile:            "server.crt",
+		connectionTimeLimit: time.Second * 10,
+		keyFile:             "server.key",
+		listenHost:          "0.0.0.0",
+		listenHostTLS:       "0.0.0.0",
+		listenPort:          25,
+		listenPortTLS:       587,
+		readTimeout:         time.Second * 5,
 	}
 
-	connectionTimeLimit := time.Second * 10
-	readTimeout := time.Second * 5
-
-	servers, err := createServers(
-		tlsConfig,
-		connectionTimeLimit,
-		readTimeout,
-		"localhost",
-		"smtp-log",
-	)
+	servers, err := createServers(config)
 	if err != nil {
 		log.Fatalf("Failed to start server %s", err)
 	}
@@ -40,7 +52,7 @@ func main() {
 			server.Stop()
 		}
 
-		shutdownTimeout := connectionTimeLimit + time.Second
+		shutdownTimeout := config.connectionTimeLimit + time.Second
 		log.Printf("Waiting %s seconds for graceful shutdown", shutdownTimeout)
 		time.Sleep(shutdownTimeout)
 
@@ -53,6 +65,47 @@ func main() {
 
 	waitForServerConnections(servers)
 	waitForServerCleanup(servers)
+}
+
+func createServers(config Config) ([]*SmtpServerContext, error) {
+	tlsConfig, err := loadTlsConfig(config.certFile, config.keyFile)
+	if err != nil {
+		log.Fatalf("Failed to load key pair %s", err)
+	}
+
+	servers := make([]*SmtpServerContext, 0)
+
+	if tlsConfig != nil {
+		server, err := StartSmtpServer(
+			config.listenHostTLS,
+			config.listenPortTLS,
+			tlsConfig,
+			config.connectionTimeLimit,
+			config.readTimeout,
+			config.bannerHost,
+			config.bannerName,
+		)
+		if err != nil {
+			return nil, err
+		}
+		servers = append(servers, server)
+	}
+
+	server, err := StartSmtpServer(
+		config.listenHost,
+		config.listenPort,
+		nil,
+		config.connectionTimeLimit,
+		config.readTimeout,
+		config.bannerHost,
+		config.bannerName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	servers = append(servers, server)
+
+	return servers, nil
 }
 
 func loadTlsConfig(certFile string, keyFile string) (*tls.Config, error) {
@@ -78,48 +131,6 @@ func loadTlsConfig(certFile string, keyFile string) (*tls.Config, error) {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cer},
 	}, nil
-}
-
-func createServers(
-	tlsConfig *tls.Config,
-	connectionTimeLimit time.Duration,
-	readTimeout time.Duration,
-	bannerHost string,
-	bannerName string,
-) ([]*SmtpServerContext, error) {
-	servers := make([]*SmtpServerContext, 0)
-
-	if tlsConfig != nil {
-		server, err := StartSmtpServer(
-			"0.0.0.0",
-			587,
-			tlsConfig,
-			connectionTimeLimit,
-			readTimeout,
-			bannerHost,
-			bannerName,
-		)
-		if err != nil {
-			return nil, err
-		}
-		servers = append(servers, server)
-	}
-
-	server, err := StartSmtpServer(
-		"0.0.0.0",
-		25,
-		nil,
-		connectionTimeLimit,
-		readTimeout,
-		bannerHost,
-		bannerName,
-	)
-	if err != nil {
-		return nil, err
-	}
-	servers = append(servers, server)
-
-	return servers, nil
 }
 
 func waitForServerConnections(servers []*SmtpServerContext) {
