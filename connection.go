@@ -6,45 +6,193 @@ import (
 	"log"
 	"net"
 	"net/textproto"
+	"strings"
 	"time"
 )
 
-type ConnectionContext struct {
-	cancelTimeout context.CancelFunc
-	conn          net.Conn
-	text          *textproto.Conn
-	context       context.Context
+type MailMessage struct {
+	from string
+	to   []string
+	data string
 }
 
-func (n *ConnectionContext) SendResponse(code int, response string) {
-	err := n.conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
-	if err != nil {
-		log.Printf("Failed to set write deadline on %s, %s", n.conn.RemoteAddr(), err)
+type Response struct {
+	code     int
+	response string
+	partial  bool
+}
+
+type ConnectionContext struct {
+	cancelTimeout  context.CancelFunc
+	conn           net.Conn
+	context        context.Context
+	currentMessage MailMessage
+	isReadingData  bool
+	text           *textproto.Conn
+}
+
+func (r *Response) Send(connectionContext ConnectionContext) {
+	separator := " "
+	if r.partial {
+		separator = "-"
 	}
 
-	err = n.text.PrintfLine("%d %s", code, response)
+	err := connectionContext.conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
 	if err != nil {
-		log.Printf("Failed to send %d to %s", code, n.conn.RemoteAddr())
+		log.Printf("Failed to set write deadline on %s, %s", connectionContext.conn.RemoteAddr(), err)
+	}
+
+	log.Printf("Sending %d%s%s", r.code, separator, r.response)
+	err = connectionContext.text.PrintfLine("%d%s%s", r.code, separator, r.response)
+	if err != nil {
+		log.Printf("Failed to send %d to %s", r.code, connectionContext.conn.RemoteAddr())
 	}
 }
 
 func (n *ConnectionContext) Send220() {
-	n.SendResponse(
-		220,
-		fmt.Sprintf(
-			"%s Service ready %s",
+	(&Response{
+		code: 220,
+		response: fmt.Sprintf(
+			"%s ESMTP %s",
 			n.context.Value(smtpContextKey("bannerHost")),
 			n.context.Value(smtpContextKey("bannerName")),
 		),
-	)
+	}).Send(*n)
 }
 
 func (n *ConnectionContext) Send221() {
-	n.SendResponse(221, "Service closing transmission channel")
+	(&Response{
+		code:     221,
+		response: "Service closing transmission channel",
+	}).Send(*n)
 }
 
 func (n *ConnectionContext) Send421() {
-	n.SendResponse(421, "Service not available, closing transmission channel")
+	(&Response{
+		code:     421,
+		response: "Service not available, closing transmission channel",
+	}).Send(*n)
+}
+
+func (n *ConnectionContext) Send500() {
+	(&Response{
+		code:     500,
+		response: "Command not recognized",
+	}).Send(*n)
+}
+
+func (n *ConnectionContext) SendOK() {
+	(&Response{
+		code:     250,
+		response: "OK",
+	}).Send(*n)
+}
+
+func (n *ConnectionContext) HandleData(input string) {
+	if input == "." {
+		n.isReadingData = false
+		log.Printf(
+			"Received %d byte message from %s to %s",
+			len(n.currentMessage.data),
+			n.currentMessage.from,
+			n.currentMessage.to,
+		)
+		n.SendOK()
+	} else {
+		if strings.HasPrefix(input, ".") {
+			input = input[1:]
+		}
+		n.currentMessage.data += input + "\n"
+	}
+}
+
+func (n *ConnectionContext) HandleCommand(input string) bool {
+	parts := strings.SplitN(input, " ", 2)
+	if len(parts) == 1 {
+		parts = append(parts, "")
+	}
+
+	command, arguments := parts[0], parts[1]
+	command = strings.ToUpper(command)
+
+	switch command {
+	case "DATA":
+		if len(n.currentMessage.from) == 0 || len(n.currentMessage.to) == 0 {
+			n.Send500()
+			break
+		}
+
+		n.isReadingData = true
+		(&Response{
+			code:     354,
+			response: "End data with <CR><LF>.<CR><LF>",
+		}).Send(*n)
+		break
+	case "EHLO":
+		(&Response{
+			code: 250,
+			response: fmt.Sprintf(
+				"Hello %s, I am %s",
+				arguments,
+				n.context.Value(smtpContextKey("bannerName")),
+			),
+			partial: true,
+		}).Send(*n)
+
+		(&Response{
+			code:     250,
+			response: "HELP",
+		}).Send(*n)
+		break
+	case "HELO":
+		(&Response{
+			code: 250,
+			response: fmt.Sprintf(
+				"Hello %s, I am %s",
+				arguments,
+				n.context.Value(smtpContextKey("bannerName")),
+			),
+		}).Send(*n)
+		break
+	case "HELP":
+		(&Response{
+			code:     214,
+			response: "I'm sorry Dave, I'm afraid I can't do that",
+		}).Send(*n)
+		break
+	case "MAIL":
+		if !strings.HasPrefix(arguments, "FROM:") {
+			n.Send500()
+			break
+		}
+
+		n.currentMessage.from = strings.TrimPrefix(arguments, "FROM:")
+		n.SendOK()
+		break
+	case "NOOP":
+		n.SendOK()
+		break
+	case "RCPT":
+		if !strings.HasPrefix(arguments, "TO:") {
+			n.Send500()
+			break
+		}
+
+		n.currentMessage.to = append(n.currentMessage.to, strings.TrimPrefix(arguments, "TO:"))
+		n.SendOK()
+		break
+	case "QUIT":
+		n.Send221()
+		return false
+	default:
+		(&Response{
+			code:     500,
+			response: "Command not recognized",
+		}).Send(*n)
+		break
+	}
+
+	return true
 }
 
 func (n *ConnectionContext) WaitForCommands() {
@@ -87,11 +235,17 @@ read:
 				}
 			}
 
-			if len(netData) == 0 {
+			if !n.isReadingData && len(netData) == 0 {
 				break read
 			}
 
-			log.Printf("Read %s (%d)", netData, len(netData))
+			log.Printf("Read \"%s\" (%d)", netData, len(netData))
+
+			if n.isReadingData {
+				n.HandleData(netData)
+			} else if !n.HandleCommand(netData) {
+				break read
+			}
 		}
 	}
 }
