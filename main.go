@@ -1,27 +1,122 @@
 package main
 
 import (
+	"crypto/tls"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
 
+func waitForServerConnections(servers []*SmtpServerContext) {
+	var serverWaitGroup sync.WaitGroup
+
+	for _, server := range servers {
+		serverWaitGroup.Add(1)
+
+		go func(s *SmtpServerContext) {
+			defer serverWaitGroup.Done()
+			select {
+			case <-s.quitChannel:
+			case <-s.context.Done():
+			}
+		}(server)
+	}
+
+	for _, server := range servers {
+		go server.WaitForConnections()
+	}
+
+	serverWaitGroup.Wait()
+}
+
+func waitForServerCleanup(servers []*SmtpServerContext) {
+	var serverWaitGroup sync.WaitGroup
+
+	for _, server := range servers {
+		serverWaitGroup.Add(1)
+
+		go func(s *SmtpServerContext) {
+			defer serverWaitGroup.Done()
+			s.waitGroup.Wait()
+		}(server)
+	}
+
+	for _, server := range servers {
+		go server.WaitForCleanup()
+	}
+
+	serverWaitGroup.Wait()
+}
+
+func loadTlsConfig(certFile string, keyFile string) (*tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, nil
+	}
+
+	_, certErr := os.Stat(certFile)
+	_, keyErr := os.Stat(keyFile)
+	if certErr != nil && keyErr != nil {
+		if os.IsNotExist(certErr) && os.IsNotExist(keyErr) {
+			return nil, nil
+		}
+
+		return nil, certErr
+	}
+
+	cer, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cer},
+	}, nil
+}
+
 func main() {
+
+	tlsConfig, err := loadTlsConfig("server.crt", "server.key")
+	if err != nil {
+		log.Fatalf("Failed to load key pair %s", err)
+	}
+
 	connectionTimeLimit := time.Second * 10
 	readTimeout := time.Second * 5
+
+	servers := make([]*SmtpServerContext, 0)
+
+	if tlsConfig != nil {
+		server, err := StartSmtpServer(
+			"0.0.0.0",
+			587,
+			tlsConfig,
+			connectionTimeLimit,
+			readTimeout,
+			"localhost",
+			"smtp-log",
+		)
+		if err != nil {
+			log.Fatalf("Failed to start SMTP TLS server %s", err)
+		}
+		servers = append(servers, server)
+	}
+
 	server, err := StartSmtpServer(
 		"0.0.0.0",
-		2525,
+		25,
+		nil,
 		connectionTimeLimit,
 		readTimeout,
 		"localhost",
 		"smtp-log",
 	)
 	if err != nil {
-		log.Fatalf("Failed to start server %s", err)
+		log.Fatalf("Failed to start SMTP server %s", err)
 	}
+	servers = append(servers, server)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
@@ -29,16 +124,21 @@ func main() {
 	go func() {
 		<-signals
 
-		server.Stop()
+		for _, server := range servers {
+			server.Stop()
+		}
 
 		shutdownTimeout := connectionTimeLimit + time.Second
 		log.Printf("Waiting %s seconds for graceful shutdown", shutdownTimeout)
 		time.Sleep(shutdownTimeout)
 
-		server.CloseConnections()
+		for _, server := range servers {
+			server.CloseConnections()
+		}
+
 		log.Fatalf("Failed to cleanup in time")
 	}()
 
-	server.WaitForConnections()
-	server.WaitForCleanup()
+	waitForServerConnections(servers)
+	waitForServerCleanup(servers)
 }

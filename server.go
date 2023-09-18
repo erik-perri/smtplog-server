@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -17,12 +18,28 @@ type SmtpServerContext struct {
 	context     context.Context
 	listener    net.Listener
 	quitChannel chan interface{}
+	tlsConfig   *tls.Config
 	waitGroup   sync.WaitGroup
+}
+
+func CreateListener(
+	listenHost string,
+	listenPort int,
+	tlsConfig *tls.Config,
+) (listener net.Listener, err error) {
+	listenAddress := fmt.Sprintf("%s:%d", listenHost, listenPort)
+
+	if tlsConfig == nil {
+		return net.Listen("tcp", listenAddress)
+	}
+
+	return tls.Listen("tcp", listenAddress, tlsConfig)
 }
 
 func StartSmtpServer(
 	listenHost string,
 	listenPort int,
+	tlsConfig *tls.Config,
 	connectionTimeLimit time.Duration,
 	readDeadline time.Duration,
 	bannerHost string,
@@ -37,7 +54,7 @@ func StartSmtpServer(
 	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), bannerHost)
 	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), bannerName)
 
-	listener, err := net.Listen("tcp", listenAddress)
+	listener, err := CreateListener(listenHost, listenPort, tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +63,7 @@ func StartSmtpServer(
 	server = &SmtpServerContext{
 		context:     ctx,
 		listener:    listener,
+		tlsConfig:   tlsConfig,
 		quitChannel: make(chan interface{}),
 	}
 
@@ -140,7 +158,12 @@ func (n *SmtpServerContext) Close(connection ConnectionContext) {
 
 func (n *SmtpServerContext) CloseConnections() {
 	for _, connection := range n.connections {
-		connection.Send421()
+		// If we're a TLS server we can't send a 421 response or we risk hanging on the send if the TLS connection is
+		// not yet established.
+		// TODO Can we detect if the TLS connection is established?
+		if n.tlsConfig == nil {
+			connection.Send421()
+		}
 		n.Close(connection)
 	}
 }
