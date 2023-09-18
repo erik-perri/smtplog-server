@@ -61,6 +61,7 @@ func (n *ConnectionContext) Send220() {
 }
 
 func (n *ConnectionContext) Send421() {
+	// TODO This needs to queue up 421 as an immediate response to any incoming command rather than sending immediately
 	(&Response{
 		code:     421,
 		response: "Service not available, closing transmission channel",
