@@ -130,7 +130,7 @@ listen:
 			n.waitGroup.Add(1)
 
 			go func() {
-				connection.Send220()
+				connection.SendBanner()
 				connection.WaitForCommands()
 
 				n.Close(connection)
@@ -162,7 +162,12 @@ func (n *SmtpServerContext) CloseConnections() {
 		// not yet established.
 		// TODO Can we detect if the TLS connection is established?
 		if n.tlsConfig == nil {
-			connection.Send421()
+			// TODO This needs to queue up 421 as an immediate response to any incoming command, then wait rather than
+			//      sending immediately
+			connection.SendResponse(Response{
+				code:     421,
+				response: "Service not available, closing transmission channel",
+			})
 		}
 		n.Close(connection)
 	}

@@ -32,55 +32,36 @@ type ConnectionContext struct {
 	text           *textproto.Conn
 }
 
-func (r *Response) Send(connectionContext ConnectionContext) {
+func CommandNotRecognizedResponse() Response {
+	return Response{
+		code:     500,
+		response: "Command not recognized",
+	}
+}
+
+func OKResponse() Response {
+	return Response{
+		code:     250,
+		response: "OK",
+	}
+}
+
+func (n *ConnectionContext) SendResponse(response Response) {
 	separator := " "
-	if r.partial {
+	if response.partial {
 		separator = "-"
 	}
 
-	err := connectionContext.conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
+	err := n.conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
 	if err != nil {
-		log.Printf("Failed to set write deadline on %s, %s", connectionContext.conn.RemoteAddr(), err)
+		log.Printf("Failed to set write deadline on %s, %s", n.conn.RemoteAddr(), err)
 	}
 
-	log.Printf("Sending %d%s%s", r.code, separator, r.response)
-	err = connectionContext.text.PrintfLine("%d%s%s", r.code, separator, r.response)
+	log.Printf("Sending %d%s%s", response.code, separator, response.response)
+	err = n.text.PrintfLine("%d%s%s", response.code, separator, response.response)
 	if err != nil {
-		log.Printf("Failed to send %d to %s", r.code, connectionContext.conn.RemoteAddr())
+		log.Printf("Failed to send %d to %s", response.code, n.conn.RemoteAddr())
 	}
-}
-
-func (n *ConnectionContext) Send220() {
-	(&Response{
-		code: 220,
-		response: fmt.Sprintf(
-			"%s ESMTP %s",
-			n.context.Value(smtpContextKey("bannerHost")),
-			n.context.Value(smtpContextKey("bannerName")),
-		),
-	}).Send(*n)
-}
-
-func (n *ConnectionContext) Send421() {
-	// TODO This needs to queue up 421 as an immediate response to any incoming command rather than sending immediately
-	(&Response{
-		code:     421,
-		response: "Service not available, closing transmission channel",
-	}).Send(*n)
-}
-
-func (n *ConnectionContext) Send500() {
-	(&Response{
-		code:     500,
-		response: "Command not recognized",
-	}).Send(*n)
-}
-
-func (n *ConnectionContext) SendOK() {
-	(&Response{
-		code:     250,
-		response: "OK",
-	}).Send(*n)
 }
 
 func (n *ConnectionContext) HandleData(input string) {
@@ -92,7 +73,7 @@ func (n *ConnectionContext) HandleData(input string) {
 			n.currentMessage.from,
 			n.currentMessage.to,
 		)
-		n.SendOK()
+		n.SendResponse(OKResponse())
 	} else {
 		n.currentMessage.data += strings.TrimPrefix(input, ".") + "\n"
 	}
@@ -110,17 +91,17 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 	switch command {
 	case "DATA":
 		if len(n.currentMessage.from) == 0 || len(n.currentMessage.to) == 0 {
-			n.Send500()
+			n.SendResponse(CommandNotRecognizedResponse())
 			break
 		}
 
 		n.isReadingData = true
-		(&Response{
+		n.SendResponse(Response{
 			code:     354,
 			response: "End data with <CR><LF>.<CR><LF>",
-		}).Send(*n)
+		})
 	case "EHLO":
-		(&Response{
+		n.SendResponse(Response{
 			code: 250,
 			response: fmt.Sprintf(
 				"Hello %s, I am %s",
@@ -128,59 +109,67 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 				n.context.Value(smtpContextKey("bannerName")),
 			),
 			partial: true,
-		}).Send(*n)
+		})
 
-		(&Response{
+		n.SendResponse(Response{
 			code:     250,
 			response: "HELP",
-		}).Send(*n)
+		})
 	case "HELO":
-		(&Response{
+		n.SendResponse(Response{
 			code: 250,
 			response: fmt.Sprintf(
 				"Hello %s, I am %s",
 				arguments,
 				n.context.Value(smtpContextKey("bannerName")),
 			),
-		}).Send(*n)
+		})
 	case "HELP":
-		(&Response{
+		n.SendResponse(Response{
 			code:     214,
 			response: "I'm sorry Dave, I'm afraid I can't do that",
-		}).Send(*n)
+		})
 	case "MAIL":
 		if !strings.HasPrefix(arguments, "FROM:") {
-			n.Send500()
+			n.SendResponse(CommandNotRecognizedResponse())
 		} else {
 			n.currentMessage.from = strings.TrimPrefix(arguments, "FROM:")
-			n.SendOK()
+			n.SendResponse(OKResponse())
 		}
 	case "NOOP":
-		n.SendOK()
+		n.SendResponse(OKResponse())
 	case "RCPT":
 		if !strings.HasPrefix(arguments, "TO:") {
-			n.Send500()
+			n.SendResponse(CommandNotRecognizedResponse())
 		} else {
 			n.currentMessage.to = append(n.currentMessage.to, strings.TrimPrefix(arguments, "TO:"))
-			n.SendOK()
+			n.SendResponse(OKResponse())
 		}
 	case "RSET":
 		n.currentMessage = MailMessage{}
-		n.SendOK()
+		n.SendResponse(OKResponse())
 	case "QUIT":
-		(&Response{
+		n.SendResponse(Response{
 			code:     221,
 			response: "Service closing transmission channel",
-		}).Send(*n)
+		})
 		return false
 	default:
-		(&Response{
-			code:     500,
-			response: "Command not recognized",
-		}).Send(*n)
+		n.SendResponse(CommandNotRecognizedResponse())
 	}
 
 	return true
+}
+
+func (n *ConnectionContext) SendBanner() {
+	n.SendResponse(Response{
+		code: 220,
+		response: fmt.Sprintf(
+			"%s ESMTP %s",
+			n.context.Value(smtpContextKey("bannerHost")).(string),
+			n.context.Value(smtpContextKey("bannerName")).(string),
+		),
+	})
 }
 
 func (n *ConnectionContext) WaitForCommands() {
