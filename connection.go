@@ -60,13 +60,6 @@ func (n *ConnectionContext) Send220() {
 	}).Send(*n)
 }
 
-func (n *ConnectionContext) Send221() {
-	(&Response{
-		code:     221,
-		response: "Service closing transmission channel",
-	}).Send(*n)
-}
-
 func (n *ConnectionContext) Send421() {
 	(&Response{
 		code:     421,
@@ -173,7 +166,10 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 		n.currentMessage = MailMessage{}
 		n.SendOK()
 	case "QUIT":
-		n.Send221()
+		(&Response{
+			code:     221,
+			response: "Service closing transmission channel",
+		}).Send(*n)
 		return false
 	default:
 		(&Response{
@@ -190,7 +186,6 @@ read:
 	for {
 		select {
 		case <-n.context.Done():
-			n.Send221()
 			break read
 		default:
 			err := n.conn.SetReadDeadline(time.Now().Add(
@@ -210,7 +205,6 @@ read:
 			if err != nil {
 				select {
 				case <-n.context.Done():
-					n.Send221()
 					break read
 				default:
 					if opErr, castSuccess := err.(*net.OpError); castSuccess && opErr.Temporary() {
