@@ -169,6 +169,9 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 			n.currentMessage.to = append(n.currentMessage.to, strings.TrimPrefix(arguments, "TO:"))
 			n.SendOK()
 		}
+	case "RSET":
+		n.currentMessage = MailMessage{}
+		n.SendOK()
 	case "QUIT":
 		n.Send221()
 		return false
