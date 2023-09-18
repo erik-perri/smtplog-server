@@ -214,9 +214,9 @@ read:
 							time.Sleep(time.Millisecond * 100)
 						}
 						continue read
-					} else {
-						break read
 					}
+
+					break read
 				}
 			}
 
