@@ -99,10 +99,7 @@ func (n *ConnectionContext) HandleData(input string) {
 		)
 		n.SendOK()
 	} else {
-		if strings.HasPrefix(input, ".") {
-			input = input[1:]
-		}
-		n.currentMessage.data += input + "\n"
+		n.currentMessage.data += strings.TrimPrefix(input, ".") + "\n"
 	}
 }
 
@@ -127,7 +124,6 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 			code:     354,
 			response: "End data with <CR><LF>.<CR><LF>",
 		}).Send(*n)
-		break
 	case "EHLO":
 		(&Response{
 			code: 250,
@@ -143,7 +139,6 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 			code:     250,
 			response: "HELP",
 		}).Send(*n)
-		break
 	case "HELO":
 		(&Response{
 			code: 250,
@@ -153,34 +148,27 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 				n.context.Value(smtpContextKey("bannerName")),
 			),
 		}).Send(*n)
-		break
 	case "HELP":
 		(&Response{
 			code:     214,
 			response: "I'm sorry Dave, I'm afraid I can't do that",
 		}).Send(*n)
-		break
 	case "MAIL":
 		if !strings.HasPrefix(arguments, "FROM:") {
 			n.Send500()
-			break
+		} else {
+			n.currentMessage.from = strings.TrimPrefix(arguments, "FROM:")
+			n.SendOK()
 		}
-
-		n.currentMessage.from = strings.TrimPrefix(arguments, "FROM:")
-		n.SendOK()
-		break
 	case "NOOP":
 		n.SendOK()
-		break
 	case "RCPT":
 		if !strings.HasPrefix(arguments, "TO:") {
 			n.Send500()
-			break
+		} else {
+			n.currentMessage.to = append(n.currentMessage.to, strings.TrimPrefix(arguments, "TO:"))
+			n.SendOK()
 		}
-
-		n.currentMessage.to = append(n.currentMessage.to, strings.TrimPrefix(arguments, "TO:"))
-		n.SendOK()
-		break
 	case "QUIT":
 		n.Send221()
 		return false
@@ -189,7 +177,6 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 			code:     500,
 			response: "Command not recognized",
 		}).Send(*n)
-		break
 	}
 
 	return true
