@@ -63,8 +63,8 @@ func StartSmtpServer(
 	server = &SmtpServerContext{
 		context:     ctx,
 		listener:    listener,
-		tlsConfig:   tlsConfig,
 		quitChannel: make(chan interface{}),
+		tlsConfig:   tlsConfig,
 	}
 
 	return server, nil
@@ -126,9 +126,9 @@ listen:
 			connection := ConnectionContext{
 				cancelTimeout:     cancel,
 				conn:              conn,
-				text:              textConn,
 				context:           ctx,
 				disconnectWaiting: false,
+				text:              textConn,
 			}
 
 			n.connections = append(n.connections, &connection)

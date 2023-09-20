@@ -12,15 +12,15 @@ import (
 )
 
 type MailMessage struct {
+	data string
 	from string
 	to   []string
-	data string
 }
 
 type Response struct {
 	code     int
-	response string
 	partial  bool
+	response string
 }
 
 type ConnectionContext struct {
@@ -103,13 +103,13 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 		})
 	case "EHLO":
 		n.SendResponse(Response{
-			code: 250,
+			code:    250,
+			partial: true,
 			response: fmt.Sprintf(
 				"Hello %s, I am %s",
 				arguments,
 				n.context.Value(smtpContextKey("bannerName")),
 			),
-			partial: true,
 		})
 
 		n.SendResponse(Response{
