@@ -56,6 +56,7 @@ func main() {
 		log.Printf("Waiting %s seconds for graceful shutdown", shutdownTimeout)
 		time.Sleep(shutdownTimeout)
 
+		log.Printf("Forcing connections closed")
 		for _, server := range servers {
 			server.CloseConnections()
 		}

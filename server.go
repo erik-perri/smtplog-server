@@ -14,7 +14,7 @@ import (
 type smtpContextKey string
 
 type SmtpServerContext struct {
-	connections []ConnectionContext
+	connections []*ConnectionContext
 	context     context.Context
 	listener    net.Listener
 	quitChannel chan interface{}
@@ -73,6 +73,10 @@ func StartSmtpServer(
 func (n *SmtpServerContext) Stop() {
 	close(n.quitChannel)
 
+	for _, connection := range n.connections {
+		connection.disconnectWaiting = true
+	}
+
 	err := n.listener.Close()
 	if err != nil {
 		log.Printf("Failed to close listener, %s", err)
@@ -120,27 +124,29 @@ listen:
 			textConn := textproto.NewConn(conn)
 
 			connection := ConnectionContext{
-				cancelTimeout: cancel,
-				conn:          conn,
-				text:          textConn,
-				context:       ctx,
+				cancelTimeout:     cancel,
+				conn:              conn,
+				text:              textConn,
+				context:           ctx,
+				disconnectWaiting: false,
 			}
 
-			n.connections = append(n.connections, connection)
+			n.connections = append(n.connections, &connection)
+
 			n.waitGroup.Add(1)
 
 			go func() {
 				connection.SendBanner()
 				connection.WaitForCommands()
 
-				n.Close(connection)
+				n.Close(&connection)
 			}()
 			break
 		}
 	}
 }
 
-func (n *SmtpServerContext) Close(connection ConnectionContext) {
+func (n *SmtpServerContext) Close(connection *ConnectionContext) {
 	connection.cancelTimeout()
 
 	err := connection.text.Close()
@@ -158,23 +164,12 @@ func (n *SmtpServerContext) Close(connection ConnectionContext) {
 
 func (n *SmtpServerContext) CloseConnections() {
 	for _, connection := range n.connections {
-		// If we're a TLS server we can't send a 421 response or we risk hanging on the send if the TLS connection is
-		// not yet established.
-		// TODO Can we detect if the TLS connection is established?
-		if n.tlsConfig == nil {
-			// TODO This needs to queue up 421 as an immediate response to any incoming command, then wait rather than
-			//      sending immediately
-			connection.SendResponse(Response{
-				code:     421,
-				response: "Service not available, closing transmission channel",
-			})
-		}
 		n.Close(connection)
 	}
 }
 
-func removeConnectionFromContextArray(connections []ConnectionContext, remove ConnectionContext) []ConnectionContext {
-	var filtered []ConnectionContext
+func removeConnectionFromContextArray(connections []*ConnectionContext, remove *ConnectionContext) []*ConnectionContext {
+	var filtered []*ConnectionContext
 	for _, connection := range connections {
 		if connection.conn != remove.conn {
 			filtered = append(filtered, connection)

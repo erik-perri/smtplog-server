@@ -24,12 +24,13 @@ type Response struct {
 }
 
 type ConnectionContext struct {
-	cancelTimeout  context.CancelFunc
-	conn           net.Conn
-	context        context.Context
-	currentMessage MailMessage
-	isReadingData  bool
-	text           *textproto.Conn
+	cancelTimeout     context.CancelFunc
+	conn              net.Conn
+	context           context.Context
+	currentMessage    MailMessage
+	disconnectWaiting bool
+	isReadingData     bool
+	text              *textproto.Conn
 }
 
 func CommandNotRecognizedResponse() Response {
@@ -205,11 +206,23 @@ read:
 							time.Sleep(time.Millisecond * 100)
 						}
 
+						if n.disconnectWaiting {
+							break read
+						}
+
 						continue read
 					}
 
 					break read
 				}
+			}
+
+			if n.disconnectWaiting {
+				n.SendResponse(Response{
+					code:     421,
+					response: "Service not available, closing transmission channel",
+				})
+				break read
 			}
 
 			if !n.isReadingData && len(netData) == 0 {
