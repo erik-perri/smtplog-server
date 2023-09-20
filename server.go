@@ -13,7 +13,7 @@ import (
 
 type smtpContextKey string
 
-type SmtpServerContext struct {
+type SMTPServerContext struct {
 	connections []*ConnectionContext
 	context     context.Context
 	listener    net.Listener
@@ -36,7 +36,7 @@ func CreateListener(
 	return tls.Listen("tcp", listenAddress, tlsConfig)
 }
 
-func StartSmtpServer(
+func StartSMTPServer(
 	listenHost string,
 	listenPort int,
 	tlsConfig *tls.Config,
@@ -44,7 +44,7 @@ func StartSmtpServer(
 	readDeadline time.Duration,
 	bannerHost string,
 	bannerName string,
-) (server *SmtpServerContext, err error) {
+) (server *SMTPServerContext, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", listenHost, listenPort)
 
 	ctx := context.Background()
@@ -60,7 +60,7 @@ func StartSmtpServer(
 	}
 
 	log.Printf("Started listening on %s", listenAddress)
-	server = &SmtpServerContext{
+	server = &SMTPServerContext{
 		context:     ctx,
 		listener:    listener,
 		quitChannel: make(chan interface{}),
@@ -70,7 +70,7 @@ func StartSmtpServer(
 	return server, nil
 }
 
-func (n *SmtpServerContext) Stop() {
+func (n *SMTPServerContext) Stop() {
 	close(n.quitChannel)
 
 	for _, connection := range n.connections {
@@ -83,11 +83,11 @@ func (n *SmtpServerContext) Stop() {
 	}
 }
 
-func (n *SmtpServerContext) WaitForCleanup() {
+func (n *SMTPServerContext) WaitForCleanup() {
 	n.waitGroup.Wait()
 }
 
-func (n *SmtpServerContext) WaitForConnections() {
+func (n *SMTPServerContext) WaitForConnections() {
 	n.waitGroup.Add(1)
 	defer func() {
 		n.waitGroup.Done()
@@ -146,7 +146,7 @@ listen:
 	}
 }
 
-func (n *SmtpServerContext) Close(connection *ConnectionContext) {
+func (n *SMTPServerContext) Close(connection *ConnectionContext) {
 	connection.cancelTimeout()
 
 	err := connection.text.Close()
@@ -162,7 +162,7 @@ func (n *SmtpServerContext) Close(connection *ConnectionContext) {
 	n.waitGroup.Done()
 }
 
-func (n *SmtpServerContext) CloseConnections() {
+func (n *SMTPServerContext) CloseConnections() {
 	for _, connection := range n.connections {
 		n.Close(connection)
 	}

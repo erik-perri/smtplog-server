@@ -68,16 +68,16 @@ func main() {
 	waitForServerCleanup(servers)
 }
 
-func createServers(config Config) ([]*SmtpServerContext, error) {
-	tlsConfig, err := loadTlsConfig(config.certFile, config.keyFile)
+func createServers(config Config) ([]*SMTPServerContext, error) {
+	tlsConfig, err := loadTLSConfig(config.certFile, config.keyFile)
 	if err != nil {
 		log.Fatalf("Failed to load key pair %s", err)
 	}
 
-	servers := make([]*SmtpServerContext, 0)
+	servers := make([]*SMTPServerContext, 0)
 
 	if tlsConfig != nil {
-		server, err := StartSmtpServer(
+		server, err := StartSMTPServer(
 			config.listenHostTLS,
 			config.listenPortTLS,
 			tlsConfig,
@@ -92,7 +92,7 @@ func createServers(config Config) ([]*SmtpServerContext, error) {
 		servers = append(servers, server)
 	}
 
-	server, err := StartSmtpServer(
+	server, err := StartSMTPServer(
 		config.listenHost,
 		config.listenPort,
 		nil,
@@ -109,7 +109,7 @@ func createServers(config Config) ([]*SmtpServerContext, error) {
 	return servers, nil
 }
 
-func loadTlsConfig(certFile string, keyFile string) (*tls.Config, error) {
+func loadTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
 	if certFile == "" || keyFile == "" {
 		return nil, nil
 	}
@@ -134,13 +134,13 @@ func loadTlsConfig(certFile string, keyFile string) (*tls.Config, error) {
 	}, nil
 }
 
-func waitForServerConnections(servers []*SmtpServerContext) {
+func waitForServerConnections(servers []*SMTPServerContext) {
 	var serverWaitGroup sync.WaitGroup
 
 	for _, server := range servers {
 		serverWaitGroup.Add(1)
 
-		go func(s *SmtpServerContext) {
+		go func(s *SMTPServerContext) {
 			defer serverWaitGroup.Done()
 			select {
 			case <-s.quitChannel:
@@ -156,13 +156,13 @@ func waitForServerConnections(servers []*SmtpServerContext) {
 	serverWaitGroup.Wait()
 }
 
-func waitForServerCleanup(servers []*SmtpServerContext) {
+func waitForServerCleanup(servers []*SMTPServerContext) {
 	var serverWaitGroup sync.WaitGroup
 
 	for _, server := range servers {
 		serverWaitGroup.Add(1)
 
-		go func(s *SmtpServerContext) {
+		go func(s *SMTPServerContext) {
 			defer serverWaitGroup.Done()
 			s.waitGroup.Wait()
 		}(server)
