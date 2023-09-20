@@ -181,7 +181,7 @@ read:
 			break read
 		default:
 			err := n.conn.SetReadDeadline(time.Now().Add(
-				n.context.Value(smtpContextKey("readDeadline")).(time.Duration),
+				time.Duration(n.context.Value(smtpContextKey("readTimeout")).(int)) * time.Second,
 			))
 			if err != nil {
 				select {

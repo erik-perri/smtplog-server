@@ -18,7 +18,6 @@ type SMTPServerContext struct {
 	context     context.Context
 	listener    net.Listener
 	quitChannel chan interface{}
-	tlsConfig   *tls.Config
 	waitGroup   sync.WaitGroup
 }
 
@@ -36,25 +35,17 @@ func CreateListener(
 	return tls.Listen("tcp", listenAddress, tlsConfig)
 }
 
-func StartSMTPServer(
-	listenHost string,
-	listenPort int,
-	tlsConfig *tls.Config,
-	connectionTimeLimit time.Duration,
-	readDeadline time.Duration,
-	bannerHost string,
-	bannerName string,
-) (server *SMTPServerContext, err error) {
-	listenAddress := fmt.Sprintf("%s:%d", listenHost, listenPort)
+func StartSMTPServer(config *Configuration, tlsConfig *tls.Config) (server *SMTPServerContext, err error) {
+	listenAddress := fmt.Sprintf("%s:%d", config.ListenHost, config.ListenPort)
 
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, smtpContextKey("address"), listenAddress)
-	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), connectionTimeLimit)
-	ctx = context.WithValue(ctx, smtpContextKey("readDeadline"), readDeadline)
-	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), bannerHost)
-	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), bannerName)
+	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), config.BannerHost)
+	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), config.BannerName)
+	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
+	ctx = context.WithValue(ctx, smtpContextKey("readTimeout"), config.ReadTimeout)
 
-	listener, err := CreateListener(listenHost, listenPort, tlsConfig)
+	listener, err := CreateListener(config.ListenHost, config.ListenPort, tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +55,6 @@ func StartSMTPServer(
 		context:     ctx,
 		listener:    listener,
 		quitChannel: make(chan interface{}),
-		tlsConfig:   tlsConfig,
 	}
 
 	return server, nil
@@ -118,7 +108,7 @@ listen:
 
 			ctx, cancel := context.WithTimeout(
 				n.context,
-				n.context.Value(smtpContextKey("connectionTimeLimit")).(time.Duration),
+				time.Duration(n.context.Value(smtpContextKey("connectionTimeLimit")).(int))*time.Second,
 			)
 
 			textConn := textproto.NewConn(conn)

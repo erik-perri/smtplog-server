@@ -2,42 +2,34 @@ package main
 
 import (
 	"crypto/tls"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 )
 
-type Config struct {
-	bannerHost          string
-	bannerName          string
-	certFile            string
-	connectionTimeLimit time.Duration
-	keyFile             string
-	listenHost          string
-	listenHostTLS       string
-	listenPort          int
-	listenPortTLS       int
-	readTimeout         time.Duration
-}
-
 func main() {
-	config := Config{
-		bannerHost:          "localhost",
-		bannerName:          "smtp-log",
-		certFile:            "server.crt",
-		connectionTimeLimit: time.Second * 10,
-		keyFile:             "server.key",
-		listenHost:          "0.0.0.0",
-		listenHostTLS:       "0.0.0.0",
-		listenPort:          25,
-		listenPortTLS:       587,
-		readTimeout:         time.Second * 5,
+	configFile := flag.String("config", "", "Configuration file")
+	flag.Parse()
+
+	if *configFile == "" {
+		log.Fatalf("No configuration file specified")
 	}
 
-	servers, err := createServers(config)
+	config, err := LoadConfiguration(*configFile)
+	if err != nil {
+		log.Fatalf("Failed to load configuration %s", err)
+	}
+
+	tlsConfig, err := loadTLSConfig(config.CertFile, config.KeyFile)
+	if err != nil {
+		log.Fatalf("Failed to load key pair %s", err)
+	}
+
+	server, err := StartSMTPServer(config, tlsConfig)
 	if err != nil {
 		log.Fatalf("Failed to start server %s", err)
 	}
@@ -48,65 +40,20 @@ func main() {
 	go func() {
 		<-signals
 
-		for _, server := range servers {
-			server.Stop()
-		}
+		server.Stop()
 
-		shutdownTimeout := config.connectionTimeLimit + time.Second
-		log.Printf("Waiting %s seconds for graceful shutdown", shutdownTimeout)
-		time.Sleep(shutdownTimeout)
+		shutdownTimeout := config.ConnectionTimeLimit + 1
+		log.Printf("Waiting %d seconds for graceful shutdown", shutdownTimeout)
+		time.Sleep(time.Duration(shutdownTimeout) * time.Second)
 
 		log.Printf("Forcing connections closed")
-		for _, server := range servers {
-			server.CloseConnections()
-		}
+		server.CloseConnections()
 
 		log.Fatalf("Failed to cleanup in time")
 	}()
 
-	waitForServerConnections(servers)
-	waitForServerCleanup(servers)
-}
-
-func createServers(config Config) ([]*SMTPServerContext, error) {
-	tlsConfig, err := loadTLSConfig(config.certFile, config.keyFile)
-	if err != nil {
-		log.Fatalf("Failed to load key pair %s", err)
-	}
-
-	servers := make([]*SMTPServerContext, 0)
-
-	if tlsConfig != nil {
-		server, err := StartSMTPServer(
-			config.listenHostTLS,
-			config.listenPortTLS,
-			tlsConfig,
-			config.connectionTimeLimit,
-			config.readTimeout,
-			config.bannerHost,
-			config.bannerName,
-		)
-		if err != nil {
-			return nil, err
-		}
-		servers = append(servers, server)
-	}
-
-	server, err := StartSMTPServer(
-		config.listenHost,
-		config.listenPort,
-		nil,
-		config.connectionTimeLimit,
-		config.readTimeout,
-		config.bannerHost,
-		config.bannerName,
-	)
-	if err != nil {
-		return nil, err
-	}
-	servers = append(servers, server)
-
-	return servers, nil
+	server.WaitForConnections()
+	server.WaitForCleanup()
 }
 
 func loadTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
@@ -118,7 +65,13 @@ func loadTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
 	_, keyErr := os.Stat(keyFile)
 	if certErr != nil && keyErr != nil {
 		if os.IsNotExist(certErr) && os.IsNotExist(keyErr) {
-			return nil, nil
+			return nil, fmt.Errorf("certificate and key file not found")
+		}
+		if os.IsNotExist(certErr) {
+			return nil, fmt.Errorf("certificate file not found")
+		}
+		if os.IsNotExist(keyErr) {
+			return nil, fmt.Errorf("key file not found")
 		}
 
 		return nil, certErr
@@ -129,48 +82,7 @@ func loadTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
 		return nil, err
 	}
 
-	return &tls.Config{
+	return &tls.Config{ //nolint:gosec
 		Certificates: []tls.Certificate{cer},
 	}, nil
-}
-
-func waitForServerConnections(servers []*SMTPServerContext) {
-	var serverWaitGroup sync.WaitGroup
-
-	for _, server := range servers {
-		serverWaitGroup.Add(1)
-
-		go func(s *SMTPServerContext) {
-			defer serverWaitGroup.Done()
-			select {
-			case <-s.quitChannel:
-			case <-s.context.Done():
-			}
-		}(server)
-	}
-
-	for _, server := range servers {
-		go server.WaitForConnections()
-	}
-
-	serverWaitGroup.Wait()
-}
-
-func waitForServerCleanup(servers []*SMTPServerContext) {
-	var serverWaitGroup sync.WaitGroup
-
-	for _, server := range servers {
-		serverWaitGroup.Add(1)
-
-		go func(s *SMTPServerContext) {
-			defer serverWaitGroup.Done()
-			s.waitGroup.Wait()
-		}(server)
-	}
-
-	for _, server := range servers {
-		go server.WaitForCleanup()
-	}
-
-	serverWaitGroup.Wait()
 }
