@@ -14,6 +14,7 @@ type Configuration struct {
 	KeyFile             string `json:"key_file"`
 	ListenHost          string `json:"listen_host"`
 	ListenPort          int    `json:"listen_port"`
+	LogConnection       string `json:"log_connection"`
 	ReadTimeout         int    `json:"read_timeout"`
 }
 

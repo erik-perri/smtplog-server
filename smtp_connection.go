@@ -29,6 +29,7 @@ type SMTPMessage struct {
 type SMTPConnection struct {
 	cancel          context.CancelFunc
 	context         context.Context
+	connectionID    int64
 	isDisconnecting bool
 	isReadingData   bool
 	message         SMTPMessage
@@ -59,8 +60,17 @@ func sendMessages(connection *SMTPConnection, messages []*SMTPResponse) {
 			log.Printf("Failed to set write deadline on %s, %s", connection.netConnection.RemoteAddr(), err)
 		}
 
-		log.Printf("> %d%s%s", message.code, separator, message.message)
-		err = connection.textConnection.PrintfLine("%d%s%s", message.code, separator, message.message)
+		output := fmt.Sprintf("%d%s%s", message.code, separator, message.message)
+
+		log.Printf("> %s", output)
+
+		_, _ = connection.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(
+			connection.connectionID,
+			LogDirectionOut,
+			[]byte(output),
+		)
+
+		err = connection.textConnection.PrintfLine(output)
 
 		// Since 221 is the response to a quit command, we don't want to log it as an error
 		// in case it was just a client that closed the connection before reading.
@@ -138,8 +148,6 @@ read:
 				}
 			}
 
-			log.Printf("< %s", netData)
-
 			if n.HandleCommand(netData) == CommandResultDisconnect {
 				break read
 			}
@@ -148,6 +156,14 @@ read:
 }
 
 func (n *SMTPConnection) HandleCommand(input string) CommandResult {
+	log.Printf("< %s", input)
+
+	_, _ = n.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(
+		n.connectionID,
+		LogDirectionIn,
+		[]byte(input),
+	)
+
 	responder := SMTPResponder{
 		connection: n,
 		messages:   make([]*SMTPResponse, 0),

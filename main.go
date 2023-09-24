@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -29,10 +30,26 @@ func main() {
 		log.Fatalf("Failed to load key pair %s", err)
 	}
 
-	server, err := CreateSMTPServer(config, tlsConfig)
+	ctx, stop := context.WithCancel(context.Background())
+
+	logger, err := CreateDatabaseLogger(ctx, config.LogConnection)
+	if err != nil {
+		log.Fatalf("Failed to initialize database connection %s", err)
+	}
+
+	server, err := CreateSMTPServer(ctx, config, tlsConfig, logger)
 	if err != nil {
 		log.Fatalf("Failed to start server %s", err)
 	}
+
+	defer stop()
+
+	defer func(logger *DatabaseLogger) {
+		err := logger.Close()
+		if err != nil {
+			log.Printf("Failed to close database connection %s", err)
+		}
+	}(logger)
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)

@@ -21,14 +21,19 @@ type SMTPServer struct {
 	waitGroup   sync.WaitGroup
 }
 
-func CreateSMTPServer(config *Configuration, tlsConfig *tls.Config) (server *SMTPServer, err error) {
+func CreateSMTPServer(
+	ctx context.Context,
+	config *Configuration,
+	tlsConfig *tls.Config,
+	logger *DatabaseLogger,
+) (server *SMTPServer, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", config.ListenHost, config.ListenPort)
 
-	ctx := context.Background()
 	ctx = context.WithValue(ctx, smtpContextKey("address"), listenAddress)
 	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), config.BannerHost)
 	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), config.BannerName)
 	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
+	ctx = context.WithValue(ctx, smtpContextKey("logger"), logger)
 	ctx = context.WithValue(ctx, smtpContextKey("readTimeout"), config.ReadTimeout)
 	ctx = context.WithValue(ctx, smtpContextKey("tlsConfig"), tlsConfig)
 
@@ -106,35 +111,53 @@ listen:
 				}
 			}
 
-			log.Printf("Accepted connection from %s", conn.RemoteAddr())
-
-			ctx, cancel := context.WithTimeout(
-				n.context,
-				time.Duration(n.context.Value(smtpContextKey("connectionTimeLimit")).(int))*time.Second,
-			)
-
-			textConn := textproto.NewConn(conn)
-
-			connection := SMTPConnection{
-				context:        ctx,
-				cancel:         cancel,
-				netConnection:  conn,
-				textConnection: textConn,
-			}
-
-			n.connections = append(n.connections, &connection)
-
-			n.waitGroup.Add(1)
-
-			go func() {
-				connection.SendBanner()
-				connection.WaitForCommands()
-
-				n.Close(&connection)
-			}()
-			break
+			go n.handleConnection(conn)
 		}
 	}
+}
+
+func (n *SMTPServer) handleConnection(conn net.Conn) {
+	logger := n.context.Value(smtpContextKey("logger")).(*DatabaseLogger)
+	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
+	if tcpAddr == nil {
+		log.Printf("Failed to get remote address")
+		return
+	}
+
+	connectionID, err := logger.LogConnection(
+		tcpAddr.IP.String(),
+		tcpAddr.Port,
+	)
+	if err != nil {
+		log.Printf("Failed to log connection, %s", err)
+		// TODO Return?
+	}
+
+	log.Printf("Accepted connection from %s", conn.RemoteAddr())
+
+	ctx, cancel := context.WithTimeout(
+		n.context,
+		time.Duration(n.context.Value(smtpContextKey("connectionTimeLimit")).(int))*time.Second,
+	)
+
+	textConn := textproto.NewConn(conn)
+
+	connection := SMTPConnection{
+		context:        ctx,
+		cancel:         cancel,
+		connectionID:   connectionID,
+		netConnection:  conn,
+		textConnection: textConn,
+	}
+
+	n.connections = append(n.connections, &connection)
+
+	n.waitGroup.Add(1)
+
+	connection.SendBanner()
+	connection.WaitForCommands()
+
+	n.Close(&connection)
 }
 
 func (n *SMTPServer) Close(connection *SMTPConnection) {
