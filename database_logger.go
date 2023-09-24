@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
+	"fmt"
 	"github.com/oklog/ulid/v2"
 	"log"
 	"strings"
@@ -27,7 +27,7 @@ const (
 func CreateDatabaseLogger(ctx context.Context, dataSourceName string) (*DatabaseLogger, error) {
 	parts := strings.SplitN(dataSourceName, "://", 2)
 	if len(parts) != 2 {
-		return nil, errors.New("invalid dsn, expected format driver://user:password@host:port/database")
+		return nil, fmt.Errorf("invalid dsn, expected format driver://user:password@host:port/database")
 	}
 
 	driverName := parts[0]
