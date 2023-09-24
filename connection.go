@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -105,15 +106,24 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 			response: "End data with <CR><LF>.<CR><LF>",
 		})
 	case "EHLO":
-		n.SendResponse(Response{
-			code:    250,
-			partial: true,
-			response: fmt.Sprintf(
-				"Hello %s, I am %s",
-				arguments,
-				n.context.Value(smtpContextKey("bannerName")),
-			),
-		})
+		lines := []string{
+			n.context.Value(smtpContextKey("bannerHost")).(string),
+			"PIPELINING",
+		}
+
+		// TODO Add support for other extensions
+
+		if n.context.Value(smtpContextKey("tlsConfig")).(*tls.Config) != nil {
+			lines = append(lines, "STARTTLS")
+		}
+
+		for _, line := range lines {
+			n.SendResponse(Response{
+				code:     250,
+				partial:  true,
+				response: line,
+			})
+		}
 
 		n.SendResponse(Response{
 			code:     250,
@@ -158,6 +168,27 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 	case "RSET":
 		n.currentMessage = MailMessage{}
 		n.SendResponse(OKResponse())
+	case "STARTTLS":
+		tlsConfig := n.context.Value(smtpContextKey("tlsConfig")).(*tls.Config)
+		if tlsConfig == nil {
+			n.SendResponse(CommandNotRecognizedResponse())
+			break
+		}
+
+		n.SendResponse(Response{
+			code:     220,
+			response: "Ready to start TLS",
+		})
+
+		tlsConn := tls.Server(n.conn, tlsConfig)
+		err := tlsConn.Handshake()
+		if err != nil {
+			log.Printf("Failed to handshake with %s, %s", n.conn.RemoteAddr(), err)
+			return false
+		}
+
+		n.conn = tlsConn
+		n.text = textproto.NewConn(n.conn)
 	default:
 		n.SendResponse(CommandNotRecognizedResponse())
 	}

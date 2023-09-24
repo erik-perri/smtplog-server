@@ -24,11 +24,12 @@ type SMTPServerContext struct {
 func CreateListener(
 	listenHost string,
 	listenPort int,
+	isTLS bool,
 	tlsConfig *tls.Config,
 ) (listener net.Listener, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", listenHost, listenPort)
 
-	if tlsConfig == nil {
+	if isTLS == false {
 		return net.Listen("tcp", listenAddress)
 	}
 
@@ -44,8 +45,9 @@ func StartSMTPServer(config *Configuration, tlsConfig *tls.Config) (server *SMTP
 	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), config.BannerName)
 	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
 	ctx = context.WithValue(ctx, smtpContextKey("readTimeout"), config.ReadTimeout)
+	ctx = context.WithValue(ctx, smtpContextKey("tlsConfig"), tlsConfig)
 
-	listener, err := CreateListener(config.ListenHost, config.ListenPort, tlsConfig)
+	listener, err := CreateListener(config.ListenHost, config.ListenPort, config.IsTLS, tlsConfig)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ type Configuration struct {
 	BannerName          string `json:"banner_name"`
 	CertFile            string `json:"cert_file"`
 	ConnectionTimeLimit int    `json:"connection_time_limit"`
+	IsTLS               bool   `json:"is_tls"`
 	KeyFile             string `json:"key_file"`
 	ListenHost          string `json:"listen_host"`
 	ListenPort          int    `json:"listen_port"`
