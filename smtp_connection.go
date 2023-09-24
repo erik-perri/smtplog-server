@@ -131,41 +131,42 @@ func (n *SMTPConnection) logMessage(
 }
 
 func (n *SMTPConnection) WaitForCommands() {
-read:
 	for {
 		select {
 		case <-n.context.Done():
-			break read
+			return
 		default:
 			netData, err := n.readInput()
 			if err != nil {
-				select {
-				case <-n.context.Done():
-					break read
-				default:
-					var opErr *net.OpError
-					if errors.As(err, &opErr) && opErr.Temporary() {
-						if !opErr.Timeout() {
-							log.Printf("Failed to read from connection, %s", err)
-							time.Sleep(time.Millisecond * 100)
-						}
-
-						if n.isDisconnecting {
-							break read
-						}
-
-						continue read
-					}
-
-					break read
+				if !n.canRetryError(err) {
+					return
 				}
+				continue
 			}
 
 			if n.HandleCommand(netData) == CommandResultDisconnect {
-				break read
+				return
 			}
 		}
 	}
+}
+
+func (n *SMTPConnection) canRetryError(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Temporary() {
+		if !opErr.Timeout() {
+			log.Printf("Failed to read from connection, %s", err)
+			time.Sleep(time.Millisecond * 100)
+		}
+
+		if n.isDisconnecting {
+			return false
+		}
+
+		return true
+	}
+
+	return false
 }
 
 func (n *SMTPConnection) HandleCommand(input string) CommandResult {
