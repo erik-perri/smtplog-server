@@ -142,6 +142,12 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 		}
 	case "NOOP":
 		n.SendResponse(OKResponse())
+	case "QUIT":
+		n.SendResponse(Response{
+			code:     221,
+			response: "Service closing transmission channel",
+		})
+		return false
 	case "RCPT":
 		if !strings.HasPrefix(arguments, "TO:") {
 			n.SendResponse(CommandNotRecognizedResponse())
@@ -152,12 +158,6 @@ func (n *ConnectionContext) HandleCommand(input string) bool {
 	case "RSET":
 		n.currentMessage = MailMessage{}
 		n.SendResponse(OKResponse())
-	case "QUIT":
-		n.SendResponse(Response{
-			code:     221,
-			response: "Service closing transmission channel",
-		})
-		return false
 	default:
 		n.SendResponse(CommandNotRecognizedResponse())
 	}
