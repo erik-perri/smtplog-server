@@ -14,7 +14,7 @@ import (
 type smtpContextKey string
 
 type SMTPServerContext struct {
-	connections []*ConnectionContext
+	connections []*SMTPConnection
 	context     context.Context
 	listener    net.Listener
 	quitChannel chan interface{}
@@ -66,7 +66,7 @@ func (n *SMTPServerContext) Stop() {
 	close(n.quitChannel)
 
 	for _, connection := range n.connections {
-		connection.disconnectWaiting = true
+		connection.isDisconnecting = true
 	}
 
 	err := n.listener.Close()
@@ -115,12 +115,11 @@ listen:
 
 			textConn := textproto.NewConn(conn)
 
-			connection := ConnectionContext{
-				cancelTimeout:     cancel,
-				conn:              conn,
-				context:           ctx,
-				disconnectWaiting: false,
-				text:              textConn,
+			connection := SMTPConnection{
+				appContext:     ctx,
+				cancelTimeout:  cancel,
+				netConnection:  conn,
+				textConnection: textConn,
 			}
 
 			n.connections = append(n.connections, &connection)
@@ -138,14 +137,14 @@ listen:
 	}
 }
 
-func (n *SMTPServerContext) Close(connection *ConnectionContext) {
+func (n *SMTPServerContext) Close(connection *SMTPConnection) {
 	connection.cancelTimeout()
 
-	err := connection.text.Close()
+	err := connection.textConnection.Close()
 	if err != nil {
 		log.Printf(
 			"Failed to close connection %s, %s",
-			connection.conn.RemoteAddr(),
+			connection.netConnection.RemoteAddr(),
 			err,
 		)
 	}
@@ -160,10 +159,10 @@ func (n *SMTPServerContext) CloseConnections() {
 	}
 }
 
-func removeConnectionFromContextArray(connections []*ConnectionContext, remove *ConnectionContext) []*ConnectionContext {
-	var filtered []*ConnectionContext
+func removeConnectionFromContextArray(connections []*SMTPConnection, remove *SMTPConnection) []*SMTPConnection {
+	var filtered []*SMTPConnection
 	for _, connection := range connections {
-		if connection.conn != remove.conn {
+		if connection.netConnection != remove.netConnection {
 			filtered = append(filtered, connection)
 		}
 	}
