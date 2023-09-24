@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
-type Configuration struct {
+type ConfigurationFile struct {
 	BannerHost          string `json:"banner_host"`
 	BannerName          string `json:"banner_name"`
 	CertFile            string `json:"cert_file"`
@@ -18,6 +20,18 @@ type Configuration struct {
 	ReadTimeout         int    `json:"read_timeout"`
 }
 
+type Configuration struct {
+	BannerHost          string
+	BannerName          string
+	ConnectionTimeLimit int
+	IsTLS               bool
+	ListenHost          string
+	ListenPort          int
+	LogConnection       string
+	ReadTimeout         int
+	TLSConfig           *tls.Config
+}
+
 func LoadConfiguration(file string) (config *Configuration, err error) {
 	handle, _ := os.Open(file)
 
@@ -26,12 +40,58 @@ func LoadConfiguration(file string) (config *Configuration, err error) {
 	}(handle)
 
 	decoder := json.NewDecoder(handle)
-	configuration := Configuration{}
+	configuration := ConfigurationFile{}
 
 	err = decoder.Decode(&configuration)
 	if err != nil {
 		return nil, err
 	}
 
-	return &configuration, nil
+	tlsConfig, err := loadTLSConfig(configuration.CertFile, configuration.KeyFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Configuration{
+		BannerHost:          configuration.BannerHost,
+		BannerName:          configuration.BannerName,
+		ConnectionTimeLimit: configuration.ConnectionTimeLimit,
+		IsTLS:               configuration.IsTLS,
+		ListenHost:          configuration.ListenHost,
+		ListenPort:          configuration.ListenPort,
+		LogConnection:       configuration.LogConnection,
+		ReadTimeout:         configuration.ReadTimeout,
+		TLSConfig:           tlsConfig,
+	}, nil
+}
+
+func loadTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, nil
+	}
+
+	_, certErr := os.Stat(certFile)
+	_, keyErr := os.Stat(keyFile)
+	if certErr != nil && keyErr != nil {
+		if os.IsNotExist(certErr) && os.IsNotExist(keyErr) {
+			return nil, fmt.Errorf("certificate and key file not found")
+		}
+		if os.IsNotExist(certErr) {
+			return nil, fmt.Errorf("certificate file not found")
+		}
+		if os.IsNotExist(keyErr) {
+			return nil, fmt.Errorf("key file not found")
+		}
+
+		return nil, certErr
+	}
+
+	cer, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{ //nolint:gosec
+		Certificates: []tls.Certificate{cer},
+	}, nil
 }

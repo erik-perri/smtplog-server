@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -25,11 +23,6 @@ func main() {
 		log.Fatalf("Failed to load configuration %s", err)
 	}
 
-	tlsConfig, err := loadTLSConfig(config.CertFile, config.KeyFile)
-	if err != nil {
-		log.Fatalf("Failed to load key pair %s", err)
-	}
-
 	ctx, stop := context.WithCancel(context.Background())
 
 	logger, err := CreateDatabaseLogger(ctx, config.LogConnection)
@@ -37,7 +30,7 @@ func main() {
 		log.Fatalf("Failed to initialize database connection %s", err)
 	}
 
-	server, err := CreateSMTPServer(ctx, config, tlsConfig, logger)
+	server, err := CreateSMTPServer(ctx, config, logger)
 	if err != nil {
 		log.Fatalf("Failed to start server %s", err)
 	}
@@ -71,35 +64,4 @@ func main() {
 
 	server.WaitForConnections()
 	server.WaitForCleanup()
-}
-
-func loadTLSConfig(certFile string, keyFile string) (*tls.Config, error) {
-	if certFile == "" || keyFile == "" {
-		return nil, nil
-	}
-
-	_, certErr := os.Stat(certFile)
-	_, keyErr := os.Stat(keyFile)
-	if certErr != nil && keyErr != nil {
-		if os.IsNotExist(certErr) && os.IsNotExist(keyErr) {
-			return nil, fmt.Errorf("certificate and key file not found")
-		}
-		if os.IsNotExist(certErr) {
-			return nil, fmt.Errorf("certificate file not found")
-		}
-		if os.IsNotExist(keyErr) {
-			return nil, fmt.Errorf("key file not found")
-		}
-
-		return nil, certErr
-	}
-
-	cer, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tls.Config{ //nolint:gosec
-		Certificates: []tls.Certificate{cer},
-	}, nil
 }

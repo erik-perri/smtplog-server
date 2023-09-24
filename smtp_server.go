@@ -24,7 +24,6 @@ type SMTPServer struct {
 func CreateSMTPServer(
 	ctx context.Context,
 	config *Configuration,
-	tlsConfig *tls.Config,
 	logger *DatabaseLogger,
 ) (server *SMTPServer, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", config.ListenHost, config.ListenPort)
@@ -35,9 +34,9 @@ func CreateSMTPServer(
 	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
 	ctx = context.WithValue(ctx, smtpContextKey("logger"), logger)
 	ctx = context.WithValue(ctx, smtpContextKey("readTimeout"), config.ReadTimeout)
-	ctx = context.WithValue(ctx, smtpContextKey("tlsConfig"), tlsConfig)
+	ctx = context.WithValue(ctx, smtpContextKey("tlsConfig"), config.TLSConfig)
 
-	listener, err := createListener(config.ListenHost, config.ListenPort, config.IsTLS, tlsConfig)
+	listener, err := createListener(config.ListenHost, config.ListenPort, config.IsTLS, config.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
