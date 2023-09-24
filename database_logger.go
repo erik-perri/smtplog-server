@@ -17,11 +17,11 @@ type DatabaseLogger struct {
 	pool    *sql.DB
 }
 
-type LogDirection string
+type LogDirection int
 
 const (
-	LogDirectionIn  LogDirection = "in"
-	LogDirectionOut LogDirection = "out"
+	LogDirectionIn  LogDirection = 0
+	LogDirectionOut LogDirection = 1
 )
 
 func CreateDatabaseLogger(ctx context.Context, dataSourceName string) (*DatabaseLogger, error) {
@@ -61,7 +61,7 @@ func (logger *DatabaseLogger) LogConnection(
 	defer cancel()
 
 	stmtIns, err := logger.pool.Prepare(
-		"INSERT INTO smtp_connection_log (connection_ulid, remote_address, remote_port) values (?, ?, ?)",
+		"INSERT INTO smtp_connection_logs (ulid, remote_address, remote_port) values (?, ?, ?)",
 	)
 	if err != nil {
 		return 0, err
@@ -91,7 +91,7 @@ func (logger *DatabaseLogger) LogMessage(
 	defer cancel()
 
 	stmtIns, err := logger.pool.Prepare(
-		"INSERT INTO smtp_message_log (connection_id, message_ulid, direction, data) values (?, ?, ?, ?)",
+		"INSERT INTO smtp_message_logs (ulid, smtp_connection_log_id, direction, data) values (?, ?, ?, ?)",
 	)
 	if err != nil {
 		return 0, err
@@ -104,7 +104,7 @@ func (logger *DatabaseLogger) LogMessage(
 		}
 	}(stmtIns)
 
-	result, err := stmtIns.Exec(connectionID, ulid.Make().String(), direction, data)
+	result, err := stmtIns.Exec(ulid.Make().String(), connectionID, direction, data)
 	if err != nil {
 		return 0, err
 	}
