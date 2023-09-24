@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-type CommandResult int64
+type CommandResult int
 
 const (
 	CommandResultOK CommandResult = iota
@@ -27,8 +27,8 @@ type SMTPMessage struct {
 }
 
 type SMTPConnection struct {
-	appContext      context.Context
-	cancelTimeout   context.CancelFunc
+	cancel          context.CancelFunc
+	context         context.Context
 	isDisconnecting bool
 	isReadingData   bool
 	message         SMTPMessage
@@ -89,8 +89,8 @@ func (n *SMTPConnection) SendBanner() {
 			code: 220,
 			message: fmt.Sprintf(
 				"%s ESMTP %s",
-				n.appContext.Value(smtpContextKey("bannerHost")).(string),
-				n.appContext.Value(smtpContextKey("bannerName")).(string),
+				n.context.Value(smtpContextKey("bannerHost")).(string),
+				n.context.Value(smtpContextKey("bannerName")).(string),
 			),
 		},
 	})
@@ -98,7 +98,7 @@ func (n *SMTPConnection) SendBanner() {
 
 func (n *SMTPConnection) readInput() (string, error) {
 	err := n.netConnection.SetReadDeadline(time.Now().Add(
-		time.Duration(n.appContext.Value(smtpContextKey("readTimeout")).(int)) * time.Second,
+		time.Duration(n.context.Value(smtpContextKey("readTimeout")).(int)) * time.Second,
 	))
 	if err != nil {
 		return "", err
@@ -111,13 +111,13 @@ func (n *SMTPConnection) WaitForCommands() {
 read:
 	for {
 		select {
-		case <-n.appContext.Done():
+		case <-n.context.Done():
 			break read
 		default:
 			netData, err := n.readInput()
 			if err != nil {
 				select {
-				case <-n.appContext.Done():
+				case <-n.context.Done():
 					break read
 				default:
 					var opErr *net.OpError
@@ -238,13 +238,13 @@ func HandlePayload(responder *SMTPResponder, connection *SMTPConnection, input s
 
 func HandleEHLO(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	lines := []string{
-		connection.appContext.Value(smtpContextKey("bannerHost")).(string),
+		connection.context.Value(smtpContextKey("bannerHost")).(string),
 		"PIPELINING",
 	}
 
 	// TODO Add support for other extensions
 
-	if connection.appContext.Value(smtpContextKey("tlsConfig")).(*tls.Config) != nil {
+	if connection.context.Value(smtpContextKey("tlsConfig")).(*tls.Config) != nil {
 		lines = append(lines, "STARTTLS")
 	}
 
@@ -267,7 +267,7 @@ func HandleEHLO(responder *SMTPResponder, connection *SMTPConnection, _ string) 
 func HandleHELO(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	responder.Respond(&SMTPResponse{
 		code:    250,
-		message: connection.appContext.Value(smtpContextKey("bannerHost")).(string),
+		message: connection.context.Value(smtpContextKey("bannerHost")).(string),
 	})
 	return CommandResultOK
 }
@@ -340,7 +340,7 @@ func HandleRSET(responder *SMTPResponder, connection *SMTPConnection, _ string) 
 }
 
 func HandleSTARTTLS(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
-	tlsConfig := connection.appContext.Value(smtpContextKey("tlsConfig")).(*tls.Config)
+	tlsConfig := connection.context.Value(smtpContextKey("tlsConfig")).(*tls.Config)
 	if tlsConfig == nil {
 		responder.Respond(&SMTPResponse{
 			code:    502,

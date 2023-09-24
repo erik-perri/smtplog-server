@@ -29,7 +29,7 @@ func main() {
 		log.Fatalf("Failed to load key pair %s", err)
 	}
 
-	server, err := StartSMTPServer(config, tlsConfig)
+	server, err := CreateSMTPServer(config, tlsConfig)
 	if err != nil {
 		log.Fatalf("Failed to start server %s", err)
 	}

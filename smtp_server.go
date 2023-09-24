@@ -13,7 +13,7 @@ import (
 
 type smtpContextKey string
 
-type SMTPServerContext struct {
+type SMTPServer struct {
 	connections []*SMTPConnection
 	context     context.Context
 	listener    net.Listener
@@ -21,7 +21,33 @@ type SMTPServerContext struct {
 	waitGroup   sync.WaitGroup
 }
 
-func CreateListener(
+func CreateSMTPServer(config *Configuration, tlsConfig *tls.Config) (server *SMTPServer, err error) {
+	listenAddress := fmt.Sprintf("%s:%d", config.ListenHost, config.ListenPort)
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, smtpContextKey("address"), listenAddress)
+	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), config.BannerHost)
+	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), config.BannerName)
+	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
+	ctx = context.WithValue(ctx, smtpContextKey("readTimeout"), config.ReadTimeout)
+	ctx = context.WithValue(ctx, smtpContextKey("tlsConfig"), tlsConfig)
+
+	listener, err := createListener(config.ListenHost, config.ListenPort, config.IsTLS, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("Started listening on %s", listenAddress)
+	server = &SMTPServer{
+		context:     ctx,
+		listener:    listener,
+		quitChannel: make(chan interface{}),
+	}
+
+	return server, nil
+}
+
+func createListener(
 	listenHost string,
 	listenPort int,
 	isTLS bool,
@@ -36,33 +62,7 @@ func CreateListener(
 	return tls.Listen("tcp", listenAddress, tlsConfig)
 }
 
-func StartSMTPServer(config *Configuration, tlsConfig *tls.Config) (server *SMTPServerContext, err error) {
-	listenAddress := fmt.Sprintf("%s:%d", config.ListenHost, config.ListenPort)
-
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, smtpContextKey("address"), listenAddress)
-	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), config.BannerHost)
-	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), config.BannerName)
-	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
-	ctx = context.WithValue(ctx, smtpContextKey("readTimeout"), config.ReadTimeout)
-	ctx = context.WithValue(ctx, smtpContextKey("tlsConfig"), tlsConfig)
-
-	listener, err := CreateListener(config.ListenHost, config.ListenPort, config.IsTLS, tlsConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("Started listening on %s", listenAddress)
-	server = &SMTPServerContext{
-		context:     ctx,
-		listener:    listener,
-		quitChannel: make(chan interface{}),
-	}
-
-	return server, nil
-}
-
-func (n *SMTPServerContext) Stop() {
+func (n *SMTPServer) Stop() {
 	close(n.quitChannel)
 
 	for _, connection := range n.connections {
@@ -75,11 +75,11 @@ func (n *SMTPServerContext) Stop() {
 	}
 }
 
-func (n *SMTPServerContext) WaitForCleanup() {
+func (n *SMTPServer) WaitForCleanup() {
 	n.waitGroup.Wait()
 }
 
-func (n *SMTPServerContext) WaitForConnections() {
+func (n *SMTPServer) WaitForConnections() {
 	n.waitGroup.Add(1)
 	defer func() {
 		n.waitGroup.Done()
@@ -116,8 +116,8 @@ listen:
 			textConn := textproto.NewConn(conn)
 
 			connection := SMTPConnection{
-				appContext:     ctx,
-				cancelTimeout:  cancel,
+				context:        ctx,
+				cancel:         cancel,
 				netConnection:  conn,
 				textConnection: textConn,
 			}
@@ -137,8 +137,8 @@ listen:
 	}
 }
 
-func (n *SMTPServerContext) Close(connection *SMTPConnection) {
-	connection.cancelTimeout()
+func (n *SMTPServer) Close(connection *SMTPConnection) {
+	connection.cancel()
 
 	err := connection.textConnection.Close()
 	if err != nil {
@@ -149,17 +149,17 @@ func (n *SMTPServerContext) Close(connection *SMTPConnection) {
 		)
 	}
 
-	n.connections = removeConnectionFromContextArray(n.connections, connection)
+	n.connections = removeConnection(n.connections, connection)
 	n.waitGroup.Done()
 }
 
-func (n *SMTPServerContext) CloseConnections() {
+func (n *SMTPServer) CloseConnections() {
 	for _, connection := range n.connections {
 		n.Close(connection)
 	}
 }
 
-func removeConnectionFromContextArray(connections []*SMTPConnection, remove *SMTPConnection) []*SMTPConnection {
+func removeConnection(connections []*SMTPConnection, remove *SMTPConnection) []*SMTPConnection {
 	var filtered []*SMTPConnection
 	for _, connection := range connections {
 		if connection.netConnection != remove.netConnection {
