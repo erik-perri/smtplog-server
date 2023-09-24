@@ -61,7 +61,8 @@ func (logger *DatabaseLogger) LogConnection(
 	defer cancel()
 
 	stmtIns, err := logger.pool.Prepare(
-		"INSERT INTO smtp_connection_logs (ulid, remote_address, remote_port) values (?, ?, ?)",
+		"INSERT INTO smtp_connection_logs (ulid, remote_address, remote_port, created_at, updated_at) " +
+			"values (?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
 		return 0, err
@@ -91,7 +92,8 @@ func (logger *DatabaseLogger) LogMessage(
 	defer cancel()
 
 	stmtIns, err := logger.pool.Prepare(
-		"INSERT INTO smtp_message_logs (ulid, smtp_connection_log_id, direction, data) values (?, ?, ?, ?)",
+		"INSERT INTO smtp_message_logs (ulid, smtp_connection_log_id, direction, data, created_at, updated_at)" +
+			" values (?, ?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
 		return 0, err
