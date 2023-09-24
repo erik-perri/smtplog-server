@@ -64,13 +64,7 @@ func sendMessages(connection *SMTPConnection, messages []*SMTPResponse) {
 
 		log.Printf("> %s", output)
 
-		_, _ = connection.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(
-			connection.connectionID,
-			LogDirectionOut,
-			[]byte(output),
-		)
-
-		err = connection.textConnection.PrintfLine(output)
+		err = connection.writeOutput(output)
 
 		// Since 221 is the response to a quit command, we don't want to log it as an error
 		// in case it was just a client that closed the connection before reading.
@@ -106,6 +100,12 @@ func (n *SMTPConnection) SendBanner() {
 	})
 }
 
+func (n *SMTPConnection) writeOutput(output string) error {
+	n.logMessage(LogDirectionOut, []byte(output))
+
+	return n.textConnection.PrintfLine(output)
+}
+
 func (n *SMTPConnection) readInput() (string, error) {
 	err := n.netConnection.SetReadDeadline(time.Now().Add(
 		time.Duration(n.context.Value(smtpContextKey("readTimeout")).(int)) * time.Second,
@@ -114,7 +114,20 @@ func (n *SMTPConnection) readInput() (string, error) {
 		return "", err
 	}
 
-	return n.textConnection.ReadLine()
+	input, err := n.textConnection.ReadLine()
+
+	if err == nil {
+		n.logMessage(LogDirectionIn, []byte(input))
+	}
+
+	return input, err
+}
+
+func (n *SMTPConnection) logMessage(
+	direction LogDirection,
+	data []byte,
+) {
+	_, _ = n.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(n.connectionID, direction, data)
 }
 
 func (n *SMTPConnection) WaitForCommands() {
@@ -157,12 +170,6 @@ read:
 
 func (n *SMTPConnection) HandleCommand(input string) CommandResult {
 	log.Printf("< %s", input)
-
-	_, _ = n.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(
-		n.connectionID,
-		LogDirectionIn,
-		[]byte(input),
-	)
 
 	responder := SMTPResponder{
 		connection: n,
