@@ -28,7 +28,6 @@ func CreateSMTPServer(
 ) (server *SMTPServer, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", config.ListenHost, config.ListenPort)
 
-	ctx = context.WithValue(ctx, smtpContextKey("address"), listenAddress)
 	ctx = context.WithValue(ctx, smtpContextKey("bannerHost"), config.BannerHost)
 	ctx = context.WithValue(ctx, smtpContextKey("bannerName"), config.BannerName)
 	ctx = context.WithValue(ctx, smtpContextKey("connectionTimeLimit"), config.ConnectionTimeLimit)
