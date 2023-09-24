@@ -75,7 +75,11 @@ func (logger *DatabaseLogger) LogConnection(
 		}
 	}(stmtIns)
 
-	result, err := stmtIns.Exec(ulid.Make().String(), remoteAddress, remotePort)
+	result, err := stmtIns.Exec(
+		strings.ToLower(ulid.Make().String()),
+		remoteAddress,
+		remotePort,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -106,7 +110,12 @@ func (logger *DatabaseLogger) LogMessage(
 		}
 	}(stmtIns)
 
-	result, err := stmtIns.Exec(ulid.Make().String(), connectionID, direction, data)
+	result, err := stmtIns.Exec(
+		strings.ToLower(ulid.Make().String()),
+		connectionID,
+		direction,
+		data,
+	)
 	if err != nil {
 		return 0, err
 	}
