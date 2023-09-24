@@ -60,7 +60,10 @@ func (n *ConnectionContext) SendResponse(response Response) {
 
 	log.Printf("Sending %d%s%s", response.code, separator, response.response)
 	err = n.text.PrintfLine("%d%s%s", response.code, separator, response.response)
-	if err != nil {
+
+	// Since 221 is the response to a quit command, we don't want to log it as an error
+	// in case it was just a client that closed the connection before reading.
+	if err != nil && response.code != 221 {
 		log.Printf("Failed to send %d to %s", response.code, n.conn.RemoteAddr())
 	}
 }
