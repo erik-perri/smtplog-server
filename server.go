@@ -29,7 +29,7 @@ func CreateListener(
 ) (listener net.Listener, err error) {
 	listenAddress := fmt.Sprintf("%s:%d", listenHost, listenPort)
 
-	if isTLS == false {
+	if !isTLS {
 		return net.Listen("tcp", listenAddress)
 	}
 
