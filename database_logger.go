@@ -233,7 +233,7 @@ func (logger *DatabaseLogger) createMailRecipient(
 	defer cancel()
 
 	stmtInsert, err := logger.pool.Prepare(
-		"INSERT INTO smtp_mail_recipients (smtp_mail_id, smtp_recipient_id, type, created_at, updated_at)" +
+		"INSERT INTO smtp_mail_smtp_recipient (smtp_mail_id, smtp_recipient_id, type, created_at, updated_at)" +
 			" values (?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
