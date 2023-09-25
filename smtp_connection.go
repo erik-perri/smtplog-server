@@ -74,6 +74,15 @@ func sendMessages(connection *SMTPConnection, messages []*SMTPResponse) {
 	}
 }
 
+func (n *SMTPMessage) HasRecipient(address string) bool {
+	for _, to := range n.to {
+		if to == address {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *SMTPResponder) Respond(response *SMTPResponse) {
 	n.messages = append(n.messages, response)
 }
@@ -319,7 +328,7 @@ func HandleHELP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandRe
 }
 
 func HandleMAIL(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
-	if len(arguments) < 1 {
+	if len(arguments) < 1 || !strings.HasPrefix(arguments, "FROM:") {
 		responder.Respond(&SMTPResponse{
 			code:    501,
 			message: "Syntax: MAIL FROM:<address>",
@@ -327,7 +336,17 @@ func HandleMAIL(responder *SMTPResponder, connection *SMTPConnection, arguments 
 		return CommandResultError
 	}
 
-	connection.message.from = strings.TrimPrefix(arguments, "FROM:")
+	arguments = strings.TrimPrefix(arguments, "FROM:")
+	address, _, err := splitAddressCommand(arguments)
+	if err != nil {
+		responder.Respond(&SMTPResponse{
+			code:    501,
+			message: "Syntax: MAIL FROM:<address>",
+		})
+		return CommandResultError
+	}
+
+	connection.message.from = address
 	responder.Respond(&SMTPResponse{
 		code:    250,
 		message: "OK",
@@ -352,7 +371,7 @@ func HandleQUIT(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandRe
 }
 
 func HandleRCPT(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
-	if len(arguments) < 1 {
+	if len(arguments) < 1 || !strings.HasPrefix(arguments, "TO:") {
 		responder.Respond(&SMTPResponse{
 			code:    501,
 			message: "Syntax: RCPT TO:<address>",
@@ -360,7 +379,20 @@ func HandleRCPT(responder *SMTPResponder, connection *SMTPConnection, arguments 
 		return CommandResultError
 	}
 
-	connection.message.to = append(connection.message.to, strings.TrimPrefix(arguments, "TO:"))
+	arguments = strings.TrimPrefix(arguments, "TO:")
+	address, _, err := splitAddressCommand(arguments)
+	if err != nil {
+		responder.Respond(&SMTPResponse{
+			code:    501,
+			message: "Syntax: RCPT TO:<address>",
+		})
+		return CommandResultError
+	}
+
+	if !connection.message.HasRecipient(address) {
+		connection.message.to = append(connection.message.to, address)
+	}
+
 	responder.Respond(&SMTPResponse{
 		code:    250,
 		message: "OK",
@@ -415,4 +447,18 @@ func HandleUnknownCommand(responder *SMTPResponder, _ *SMTPConnection, _ string)
 		message: "Command not recognized",
 	})
 	return CommandResultError
+}
+
+func splitAddressCommand(arguments string) (string, string, error) {
+	if len(arguments) < 1 || !strings.HasPrefix(arguments, "<") || !strings.HasSuffix(arguments, ">") {
+		return "", "", fmt.Errorf("invalid address")
+	}
+
+	arguments = strings.TrimPrefix(arguments, "<")
+	parts := strings.SplitN(arguments, ">", 2)
+	if len(parts) != 2 {
+		parts = append(parts, "")
+	}
+
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), nil
 }
