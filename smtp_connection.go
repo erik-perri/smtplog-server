@@ -127,7 +127,17 @@ func (n *SMTPConnection) logMessage(
 	direction LogDirection,
 	data []byte,
 ) {
-	_, _ = n.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(n.connectionID, direction, data)
+	_, err := n.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMessage(n.connectionID, direction, data)
+	if err != nil {
+		log.Printf("Failed to log message, %s", err)
+	}
+}
+
+func (n *SMTPConnection) logMail(message SMTPMessage) {
+	_, err := n.context.Value(smtpContextKey("logger")).(*DatabaseLogger).LogMail(n.connectionID, message)
+	if err != nil {
+		log.Printf("Failed to log mail, %s", err)
+	}
 }
 
 func (n *SMTPConnection) WaitForCommands() {
@@ -250,6 +260,10 @@ func HandlePayload(responder *SMTPResponder, connection *SMTPConnection, input s
 			connection.message.from,
 			connection.message.to,
 		)
+
+		connection.logMail(connection.message)
+		connection.message = SMTPMessage{}
+
 		responder.Respond(&SMTPResponse{
 			code:    250,
 			message: "OK",
