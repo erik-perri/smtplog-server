@@ -223,27 +223,27 @@ func (n *SMTPConnection) HandleCommand(input string) CommandResult {
 	}
 
 	smtpCommands := map[string]func(*SMTPResponder, *SMTPConnection, string) CommandResult{
-		"DATA":     HandleDATA,
-		"EHLO":     HandleEHLO,
-		"HELO":     HandleHELO,
-		"HELP":     HandleHELP,
-		"MAIL":     HandleMAIL,
-		"NOOP":     HandleNOOP,
-		"QUIT":     HandleQUIT,
-		"RCPT":     HandleRCPT,
-		"RSET":     HandleRSET,
-		"STARTTLS": HandleSTARTTLS,
+		"DATA":     handleDATA,
+		"EHLO":     handleEHLO,
+		"HELO":     handleHELO,
+		"HELP":     handleHELP,
+		"MAIL":     handleMAIL,
+		"NOOP":     handleNOOP,
+		"QUIT":     handleQUIT,
+		"RCPT":     handleRCPT,
+		"RSET":     handleRSET,
+		"STARTTLS": handleSTARTTLS,
 		"VRFY":     handleVRFY,
 	}
 
 	if smtpCommands[command] == nil {
-		return HandleUnknownCommand(&responder, n, input)
+		return handleUnknownCommand(&responder, n, input)
 	}
 
 	return smtpCommands[command](&responder, n, arguments)
 }
 
-func HandleDATA(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
+func handleDATA(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	if len(connection.message.from) == 0 || len(connection.message.to) == 0 {
 		responder.Respond(&SMTPResponse{
 			code:    503,
@@ -284,7 +284,7 @@ func HandlePayload(responder *SMTPResponder, connection *SMTPConnection, input s
 	return CommandResultOK
 }
 
-func HandleEHLO(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
+func handleEHLO(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	lines := []string{
 		connection.context.Value(smtpContextKey("bannerHost")).(string),
 		"PIPELINING",
@@ -312,7 +312,7 @@ func HandleEHLO(responder *SMTPResponder, connection *SMTPConnection, _ string) 
 	return CommandResultOK
 }
 
-func HandleHELO(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
+func handleHELO(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	responder.Respond(&SMTPResponse{
 		code:    250,
 		message: connection.context.Value(smtpContextKey("bannerHost")).(string),
@@ -320,7 +320,7 @@ func HandleHELO(responder *SMTPResponder, connection *SMTPConnection, _ string) 
 	return CommandResultOK
 }
 
-func HandleHELP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
+func handleHELP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
 	responder.Respond(&SMTPResponse{
 		code:    214,
 		message: "I'm sorry Dave, I'm afraid I can't do that",
@@ -328,7 +328,7 @@ func HandleHELP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandRe
 	return CommandResultOK
 }
 
-func HandleMAIL(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
+func handleMAIL(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
 	if len(arguments) < 1 || !strings.HasPrefix(arguments, "FROM:") {
 		responder.Respond(&SMTPResponse{
 			code:    501,
@@ -355,7 +355,7 @@ func HandleMAIL(responder *SMTPResponder, connection *SMTPConnection, arguments 
 	return CommandResultOK
 }
 
-func HandleNOOP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
+func handleNOOP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
 	responder.Respond(&SMTPResponse{
 		code:    250,
 		message: "OK",
@@ -363,7 +363,7 @@ func HandleNOOP(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandRe
 	return CommandResultOK
 }
 
-func HandleQUIT(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
+func handleQUIT(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
 	responder.Respond(&SMTPResponse{
 		code:    221,
 		message: "Service closing transmission channel",
@@ -371,7 +371,7 @@ func HandleQUIT(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandRe
 	return CommandResultDisconnect
 }
 
-func HandleRCPT(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
+func handleRCPT(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
 	if len(arguments) < 1 || !strings.HasPrefix(arguments, "TO:") {
 		responder.Respond(&SMTPResponse{
 			code:    501,
@@ -401,7 +401,7 @@ func HandleRCPT(responder *SMTPResponder, connection *SMTPConnection, arguments 
 	return CommandResultOK
 }
 
-func HandleRSET(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
+func handleRSET(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	connection.message = SMTPMessage{}
 	responder.Respond(&SMTPResponse{
 		code:    250,
@@ -410,7 +410,7 @@ func HandleRSET(responder *SMTPResponder, connection *SMTPConnection, _ string) 
 	return CommandResultOK
 }
 
-func HandleSTARTTLS(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
+func handleSTARTTLS(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
 	tlsConfig := connection.context.Value(smtpContextKey("tlsConfig")).(*tls.Config)
 	if tlsConfig == nil {
 		responder.Respond(&SMTPResponse{
@@ -442,7 +442,7 @@ func HandleSTARTTLS(responder *SMTPResponder, connection *SMTPConnection, _ stri
 	return CommandResultOK
 }
 
-func HandleUnknownCommand(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
+func handleUnknownCommand(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
 	responder.Respond(&SMTPResponse{
 		code:    500,
 		message: "Command not recognized",
