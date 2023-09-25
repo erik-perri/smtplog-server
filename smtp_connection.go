@@ -233,6 +233,7 @@ func (n *SMTPConnection) HandleCommand(input string) CommandResult {
 		"RCPT":     HandleRCPT,
 		"RSET":     HandleRSET,
 		"STARTTLS": HandleSTARTTLS,
+		"VRFY":     handleVRFY,
 	}
 
 	if smtpCommands[command] == nil {
@@ -447,6 +448,14 @@ func HandleUnknownCommand(responder *SMTPResponder, _ *SMTPConnection, _ string)
 		message: "Command not recognized",
 	})
 	return CommandResultError
+}
+
+func handleVRFY(responder *SMTPResponder, _ *SMTPConnection, _ string) CommandResult {
+	responder.Respond(&SMTPResponse{
+		code:    252,
+		message: "Cannot VRFY",
+	})
+	return CommandResultOK
 }
 
 func splitAddressCommand(arguments string) (string, string, error) {
