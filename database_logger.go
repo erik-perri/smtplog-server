@@ -68,7 +68,7 @@ func (logger *DatabaseLogger) LogConnection(
 	defer cancel()
 
 	stmtInsert, err := logger.pool.Prepare(
-		"INSERT INTO smtp_connection_logs (ulid, remote_address, remote_port, created_at, updated_at) " +
+		"INSERT INTO connections (ulid, remote_address, remote_port, created_at, updated_at) " +
 			"values (?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
@@ -98,7 +98,7 @@ func (logger *DatabaseLogger) LogMessage(
 	defer cancel()
 
 	stmtInsert, err := logger.pool.Prepare(
-		"INSERT INTO smtp_message_logs (ulid, smtp_connection_log_id, direction, data, created_at, updated_at)" +
+		"INSERT INTO connection_messages (ulid, connection_id, direction, data, created_at, updated_at)" +
 			" values (?, ?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
@@ -125,7 +125,7 @@ func (logger *DatabaseLogger) fetchOrCreateRecipient(address string) (int64, err
 	defer cancel()
 
 	stmtSelect, err := logger.pool.Prepare(
-		"SELECT id FROM smtp_recipients WHERE email = ?",
+		"SELECT id FROM recipients WHERE email = ?",
 	)
 	if err != nil {
 		return 0, err
@@ -142,7 +142,7 @@ func (logger *DatabaseLogger) fetchOrCreateRecipient(address string) (int64, err
 	}
 
 	stmtInsert, err := logger.pool.Prepare(
-		"INSERT INTO smtp_recipients (email, created_at, updated_at) values (?, NOW(), NOW())",
+		"INSERT INTO recipients (email, created_at, updated_at) values (?, NOW(), NOW())",
 	)
 	if err != nil {
 		return 0, err
@@ -203,7 +203,7 @@ func (logger *DatabaseLogger) createMail(connectionID int64, data string) (int64
 	defer cancel()
 
 	stmtInsert, err := logger.pool.Prepare(
-		"INSERT INTO smtp_mail (ulid, smtp_connection_log_id, data, created_at, updated_at)" +
+		"INSERT INTO mail (ulid, connection_id, data, created_at, updated_at)" +
 			" values (?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
@@ -233,7 +233,7 @@ func (logger *DatabaseLogger) createMailRecipient(
 	defer cancel()
 
 	stmtInsert, err := logger.pool.Prepare(
-		"INSERT INTO smtp_mail_smtp_recipient (smtp_mail_id, smtp_recipient_id, type, created_at, updated_at)" +
+		"INSERT INTO mail_recipient (mail_id, recipient_id, type, created_at, updated_at)" +
 			" values (?, ?, ?, NOW(), NOW())",
 	)
 	if err != nil {
