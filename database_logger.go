@@ -131,7 +131,7 @@ func (logger *DatabaseLogger) fetchOrCreateRecipient(address string) (int64, err
 		return 0, err
 	}
 
-	var existingID int64 = 0
+	var existingID int64
 	err = stmtSelect.QueryRow(address).Scan(&existingID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
