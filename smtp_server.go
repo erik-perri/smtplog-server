@@ -168,6 +168,11 @@ func (n *SMTPServer) Close(connection *SMTPConnection) {
 			connection.netConnection.RemoteAddr(),
 			err,
 		)
+	} else {
+		log.Printf(
+			"Closed connection from %s",
+			connection.netConnection.RemoteAddr(),
+		)
 	}
 
 	n.connections = removeConnection(n.connections, connection)
