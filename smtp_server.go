@@ -141,6 +141,7 @@ func (n *SMTPServer) handleConnection(conn net.Conn) {
 	textConn := textproto.NewConn(conn)
 
 	connection := SMTPConnection{
+		authMechanism:  AuthenticationMechanismNone,
 		context:        ctx,
 		cancel:         cancel,
 		connectionID:   connectionID,

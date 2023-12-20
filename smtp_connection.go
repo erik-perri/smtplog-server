@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -20,6 +21,14 @@ const (
 	CommandResultDisconnect
 )
 
+type AuthenticationMechanism int
+
+const (
+	AuthenticationMechanismNone AuthenticationMechanism = iota
+	AuthenticationMechanismLogin
+	AuthenticationMechanismPlain
+)
+
 type SMTPMessage struct {
 	data string
 	from string
@@ -27,11 +36,14 @@ type SMTPMessage struct {
 }
 
 type SMTPConnection struct {
+	authMechanism   AuthenticationMechanism
+	authLines       []string
 	cancel          context.CancelFunc
 	context         context.Context
 	connectionID    int64
 	isDisconnecting bool
 	isReadingData   bool
+	isReadingAuth   bool
 	message         SMTPMessage
 	netConnection   net.Conn
 	textConnection  *textproto.Conn
@@ -222,7 +234,12 @@ func (n *SMTPConnection) HandleCommand(input string) CommandResult {
 		return HandlePayload(&responder, n, input)
 	}
 
+	if n.isReadingAuth {
+		return HandleAuthPayload(&responder, n, input)
+	}
+
 	smtpCommands := map[string]func(*SMTPResponder, *SMTPConnection, string) CommandResult{
+		"AUTH":     handleAUTH,
 		"DATA":     handleDATA,
 		"EHLO":     handleEHLO,
 		"HELO":     handleHELO,
@@ -241,6 +258,80 @@ func (n *SMTPConnection) HandleCommand(input string) CommandResult {
 	}
 
 	return smtpCommands[command](&responder, n, arguments)
+}
+
+func HandleAuthPayload(responder *SMTPResponder, connection *SMTPConnection, input string) CommandResult {
+	connection.isReadingAuth = false
+
+	switch connection.authMechanism {
+	case AuthenticationMechanismNone:
+	case AuthenticationMechanismPlain:
+		break
+	case AuthenticationMechanismLogin:
+		connection.authLines = append(connection.authLines, input)
+
+		if len(connection.authLines) < 2 {
+			responder.Respond(&SMTPResponse{
+				code:    334,
+				message: base64.StdEncoding.EncodeToString([]byte("Password:")),
+			})
+			connection.isReadingAuth = true
+		} else {
+			responder.Respond(&SMTPResponse{
+				code:    235,
+				message: "2.7.0 Authentication successful",
+			})
+		}
+
+		return CommandResultOK
+	}
+
+	return CommandResultError
+}
+
+func handleAUTH(responder *SMTPResponder, connection *SMTPConnection, input string) CommandResult {
+	parts := strings.SplitN(input, " ", 2)
+	if len(parts) == 1 {
+		parts = append(parts, "")
+	}
+
+	mechanism, arguments := parts[0], parts[1]
+
+	authHandlers := map[string]func(*SMTPResponder, *SMTPConnection, string) CommandResult{
+		"LOGIN": handleAuthLOGIN,
+		"PLAIN": handleAuthPLAIN,
+	}
+
+	if authHandlers[mechanism] == nil {
+		return handleUnknownCommand(responder, connection, arguments)
+	}
+
+	return authHandlers[mechanism](responder, connection, arguments)
+}
+
+func handleAuthPLAIN(responder *SMTPResponder, connection *SMTPConnection, arguments string) CommandResult {
+	connection.authMechanism = AuthenticationMechanismPlain
+	connection.authLines = []string{arguments}
+
+	responder.Respond(&SMTPResponse{
+		code:    235,
+		message: "2.7.0 Authentication successful",
+	})
+
+	return CommandResultOK
+}
+
+func handleAuthLOGIN(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
+	connection.authMechanism = AuthenticationMechanismLogin
+	connection.authLines = []string{}
+	connection.isReadingAuth = true
+
+	responder.Respond(&SMTPResponse{
+		code:    334,
+		message: base64.StdEncoding.EncodeToString([]byte("Username:")),
+	})
+
+	return CommandResultOK
 }
 
 func handleDATA(responder *SMTPResponder, connection *SMTPConnection, _ string) CommandResult {
@@ -289,6 +380,14 @@ func handleEHLO(responder *SMTPResponder, connection *SMTPConnection, _ string) 
 		connection.context.Value(smtpContextKey("bannerHost")).(string),
 		"PIPELINING",
 	}
+
+	authTypes := []string{
+		"LOGIN",
+		"PLAIN",
+	}
+	authLine := fmt.Sprintf("AUTH %s", strings.Join(authTypes, " "))
+
+	lines = append(lines, authLine)
 
 	// TODO Add support for other extensions
 
