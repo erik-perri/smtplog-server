@@ -175,7 +175,7 @@ func (logger *DatabaseLogger) LogMail(
 		return mailID, err
 	}
 
-	_, err = logger.createMailRecipient(mailID, fromRecipientID, RecipientTo)
+	_, err = logger.createMailRecipient(mailID, fromRecipientID, RecipientFrom)
 	if err != nil {
 		return mailID, err
 	}
@@ -185,7 +185,7 @@ func (logger *DatabaseLogger) LogMail(
 		if err != nil {
 			return mailID, err
 		}
-		_, err = logger.createMailRecipient(mailID, toRecipientID, RecipientFrom)
+		_, err = logger.createMailRecipient(mailID, toRecipientID, RecipientTo)
 		if err != nil {
 			return mailID, err
 		}
