@@ -24,9 +24,9 @@ const (
 type AuthenticationMechanism int
 
 const (
-	AuthenticationMechanismNone AuthenticationMechanism = iota
-	AuthenticationMechanismLogin
-	AuthenticationMechanismPlain
+	AuthenticationMechanismNone  AuthenticationMechanism = 0
+	AuthenticationMechanismLogin AuthenticationMechanism = 1
+	AuthenticationMechanismPlain AuthenticationMechanism = 2
 )
 
 type SMTPMessage struct {
